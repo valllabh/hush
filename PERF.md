@@ -44,8 +44,15 @@ Trade: no libonnxruntime, simpler deployment, comparable speed.
 | per-forward tensor arena + sync.Pool reuse      | 15.1 ms   | 0.015 | 76        |
 | NEON 4x4 ASM inner kernel (arm64)               | 11.1 ms   | 0.013 | 76        |
 | NEON multi-panel ASM (amortize call overhead)   | 10.7 ms   | 0.013 | 76        |
+| fused QKV projection (tried, no win at T=4)     | 10.9 ms   | 0.013 | 40        |
+| fused residual+LayerNorm (tried, no win at T=4) | 11.0 ms   | 0.013 | 76        |
 
 Cumulative: **~410x** faster than the initial straight translation.
+
+Fusions on the last two rows were implemented and pass all numeric tests
+(see `_bmad-output/decisions/decisions.md` 2026-04-24) but did not move
+the benchmark beyond noise on M4 Pro at T=4. Not merged. Worth retrying
+if realistic T grows or on AMD64.
 AMD64 ships with a symmetric XMM + VFMADD231PS kernel (cross-compile
 verified; runtime not benchmarked on this host).
 
