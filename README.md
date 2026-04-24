@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>AI based Secrets Detector. Runs on CPU.</b><br/>
-  An 80MB binary with a brain. Catches real leaks that regex scanners miss,<br/>
-  ignores the noise they flood you with. Offline. No GPU. No cloud.
+  A tiny AI that catches real leaks regex scanners miss,<br/>
+  and ignores the noise they flood you with. Offline. No GPU. No cloud.
 </p>
 
 <p align="center">
