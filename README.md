@@ -1,13 +1,23 @@
-# hush
+<p align="center">
+  <img src="docs/assets/logo.png" alt="hush" width="180" />
+</p>
 
-Local, offline secrets detection powered by a 1 bit quantized model.
+<h1 align="center">hush</h1>
+
+<p align="center">
+Local, offline secrets detection powered by a 1 bit quantized model.<br/>
 CLI for humans and CI, Go library for integration.
+</p>
+
+<p align="center">
 
 [![ci](https://github.com/valllabh/hush/actions/workflows/ci.yml/badge.svg)](https://github.com/valllabh/hush/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/valllabh/hush.svg)](https://pkg.go.dev/github.com/valllabh/hush)
 [![Go Report Card](https://goreportcard.com/badge/github.com/valllabh/hush)](https://goreportcard.com/report/github.com/valllabh/hush)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/valllabh/hush)](https://github.com/valllabh/hush/releases)
+
+</p>
 
 ## Why hush
 
