@@ -23,7 +23,7 @@
 
 Hush scans files for secrets — API keys, tokens, passwords, certificates — and flags them before they leak.
 
-It's smarter than regex-only scanners because a small AI model is baked into the binary. That means fewer false positives, less alert fatigue, and real leaks actually get noticed.
+What makes it different: there's a little AI brain inside the binary that double-checks every suspicious-looking string. Regex scanners yell about every random ID or hash; hush only flags the ones the AI thinks are actually secrets. Fewer false alarms, real leaks don't get drowned out.
 
 - **One file to run.** A single static binary. No Python, no libraries to install, no Docker required.
 - **Completely offline.** Your code never leaves your machine.
@@ -142,19 +142,18 @@ cosign verify-blob \
   hush_0.1.2_linux_amd64.tar.gz
 ```
 
-## Under the hood
+## How it works (simple version)
 
-For the curious. Skip this section unless you want detail.
+Two steps:
 
-Hush runs a two-stage pipeline:
+1. **Find suspects.** Regex rules + entropy checks pull out every string that *could* be a secret. This is fast but noisy — it catches real secrets along with a lot of harmless-looking garbage.
+2. **Ask the AI.** A tiny AI model looks at each suspect and its surroundings and decides: real secret, or just noise? Only the confident ones get reported.
 
-```
-text -> candidate extractor (regex + entropy) -> classifier (AI) -> verdict
-```
+The AI is trained on thousands of real leaks and near-miss examples, so it's good at telling an AWS key apart from a UUID that happens to look similar.
 
-The classifier is a small neural network baked into the binary. It sees each candidate span plus its surrounding context, then decides: real secret or noise. The expensive stage only runs on candidates the regex found — keeping throughput high and false positives low.
+It all runs on your CPU. No GPU needed. No cloud involved. The model is baked right into the binary.
 
-Performance, accuracy numbers, and architectural detail: [PERF.md](PERF.md) and [CHANGELOG.md](CHANGELOG.md).
+Performance numbers and technical detail: [PERF.md](PERF.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Security · Contributing · License
 
