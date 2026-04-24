@@ -9,9 +9,6 @@ permissions:
   id-token: write
   attestations: write
 
-env:
-  ORT_VERSION: "1.20.0"
-
 jobs:
   build:
     name: build ${{ matrix.target.os_arch }}
@@ -20,10 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { os_arch: linux_amd64,  runner: ubuntu-latest,    goos: linux,  goarch: amd64, ort_asset: onnxruntime-linux-x64,      libglob: "libonnxruntime.so*" }
-          - { os_arch: linux_arm64,  runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64, ort_asset: onnxruntime-linux-aarch64,  libglob: "libonnxruntime.so*" }
-          - { os_arch: darwin_amd64, runner: macos-13,         goos: darwin, goarch: amd64, ort_asset: onnxruntime-osx-x86_64,     libglob: "libonnxruntime*.dylib" }
-          - { os_arch: darwin_arm64, runner: macos-latest,     goos: darwin, goarch: arm64, ort_asset: onnxruntime-osx-arm64,      libglob: "libonnxruntime*.dylib" }
+          - { os_arch: linux_amd64,  runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
+          - { os_arch: linux_arm64,  runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
+          - { os_arch: darwin_arm64, runner: macos-latest,     goos: darwin, goarch: arm64 }
+          # darwin_amd64 (Intel Mac) skipped: macos-13 runners are queue-stuck.
+          # Intel Mac users: `go install github.com/valllabh/hush/cmd/hush@latest`
     steps:
       - uses: actions/checkout@v4
 
@@ -32,66 +30,23 @@ jobs:
           go-version: "1.26"
           cache: true
 
-      - name: Download ONNX Runtime
-        run: |
-          set -eux
-          url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${{ matrix.target.ort_asset }}-${ORT_VERSION}.tgz"
-          curl -sSL -o /tmp/ort.tgz "$url"
-          mkdir -p /tmp/ort
-          tar -xzf /tmp/ort.tgz -C /tmp/ort --strip-components=1
-
-      - name: Build hush
+      - name: Build hush (pure Go, static)
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-          CGO_CFLAGS: "-I/tmp/ort/include"
-          CGO_LDFLAGS: "-L/tmp/ort/lib"
-          LD_LIBRARY_PATH: "/tmp/ort/lib"
-          DYLD_LIBRARY_PATH: "/tmp/ort/lib"
         run: |
           set -eux
           VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p staging/${{ matrix.target.os_arch }}/lib
+          mkdir -p staging/${{ matrix.target.os_arch }}
           go build -trimpath \
             -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA}" \
             -o "staging/${{ matrix.target.os_arch }}/hush" \
             ./cmd/hush
 
-      - name: Stage libonnxruntime + INSTALL.md
+      - name: Bundle docs
         run: |
-          set -eux
-          stage="staging/${{ matrix.target.os_arch }}"
-          mkdir -p "$stage/lib"
-          # Find every libonnxruntime file (and its symlinks) under /tmp/ort
-          # and copy them in. Uses while read (bash 3.2 portable, macOS
-          # ships bash 3.2) to iterate find output robustly.
-          echo "Contents of /tmp/ort:"
-          find /tmp/ort \( -type f -o -type l \) -maxdepth 5 | head -60 || true
-          copied=0
-          while IFS= read -r f; do
-            cp -P "$f" "$stage/lib/"
-            copied=$((copied + 1))
-          done < <(find /tmp/ort \( -name 'libonnxruntime*.dylib' -o -name 'libonnxruntime.so*' \))
-          if [ "$copied" -eq 0 ]; then
-            echo "ERROR: no libonnxruntime files found under /tmp/ort" >&2
-            exit 1
-          fi
-          echo "Staged ($copied files):"
-          ls -la "$stage/lib"
-          first_lib=$(ls "$stage/lib" | head -1)
-          cat > "$stage/INSTALL.md" <<EOF
-          # hush ${GITHUB_REF_NAME}
-
-          Extract the archive and put \`hush\` on your \$PATH. The \`lib/\`
-          directory ships the matching libonnxruntime. Point hush at it:
-
-              export ONNXRUNTIME_LIB="\$PWD/lib/${first_lib}"
-
-          Or copy the lib file into /usr/local/lib (Linux) or
-          /opt/homebrew/lib (macOS) and run \`sudo ldconfig\` so hush
-          finds it automatically.
-          EOF
+          cp README.md LICENSE CHANGELOG.md PERF.md "staging/${{ matrix.target.os_arch }}/"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -112,7 +67,7 @@ jobs:
         with:
           go-version: "1.26"
 
-      - name: Download all build artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: staging
@@ -122,15 +77,11 @@ jobs:
         run: |
           set -eux
           cd staging
-          for d in hush-*; do
-            mv "$d" "${d#hush-}"
-          done
+          for d in hush-*; do mv "$d" "${d#hush-}"; done
           ls -la
-          for sub in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+          for sub in linux_amd64 linux_arm64 darwin_arm64; do
             test -x "$sub/hush"
-            test -d "$sub/lib"
           done
-          chmod +x */hush || true
 
       - uses: sigstore/cosign-installer@v3
 
