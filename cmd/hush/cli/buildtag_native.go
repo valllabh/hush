@@ -1,9 +1,8 @@
-//go:build native
+//go:build ort
 
 package cli
 
-// integrationBuildTags tells the integration TestMain to compile hush
-// with the same native tag that this test binary was built with, so the
-// exec'd binary exercises the pure Go backend rather than the default
-// ORT path.
-var integrationBuildTags = "native"
+// integrationBuildTags propagates the `ort` tag to `go build` when the
+// test binary was built with it, so the exec'd hush exercises the ORT
+// backend for diff testing rather than the default pure-Go path.
+var integrationBuildTags = "ort"

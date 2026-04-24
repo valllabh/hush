@@ -5,6 +5,10 @@ import (
 	_ "embed"
 )
 
+// ModelVersion is the identifier of the embedded classifier model.
+// Keep in sync with the asset filename and CHANGELOG.
+const ModelVersion = "hush-model-v1"
+
 //go:embed assets/hush-model-v1.int8.hbin
 var embeddedModel []byte
 

@@ -1,3 +1,6 @@
+//go:build ort
+// +build ort
+
 // Package classifier wraps the embedded BitNet ONNX model.
 //
 // The model and tokenizer are compiled into the binary via //go:embed so the

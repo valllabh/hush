@@ -12,14 +12,13 @@
 //	masked, _, _ := s.Redact(text, "[REDACTED:%s]")
 //	fmt.Println(hush.ModelVersion)
 //
-// Advanced users who need to swap the classifier, drive extraction directly,
-// or embed a different model can reach the underlying packages at
-// github.com/valllabh/hush/pkg/{scanner,classifier,extractor}. Those
-// subpackages are stable but generic; prefer hush.* for everyday use.
+// The default build uses the pure Go runtime from pkg/native — no CGO,
+// no libonnxruntime, truly static. Advanced users who want to drive the
+// extractor or classifier directly can reach pkg/{scanner,native,extractor}.
 package hush
 
 import (
-	"github.com/valllabh/hush/pkg/classifier"
+	"github.com/valllabh/hush/pkg/native"
 	"github.com/valllabh/hush/pkg/scanner"
 )
 
@@ -35,13 +34,12 @@ type (
 // ModelVersion is the version of the classifier model compiled into this
 // build. Surface this in --version output, request logs, or telemetry so
 // you can correlate findings with a specific model.
-const ModelVersion = classifier.ModelVersion
+const ModelVersion = native.ModelVersion
 
 // New returns a Scanner ready to use. By default it loads the embedded
-// BitNet classifier; set Options.ModelOff to skip the model and run the
-// extractor only (faster, more false positives, no libonnxruntime needed).
-//
-// Remember to Close() the scanner to release the ONNX session.
+// BitNet classifier via the pure Go runtime. Set Options.ModelOff to
+// skip the model and run the extractor only (faster, more false
+// positives, zero classifier cost).
 func New(opts Options) (*Scanner, error) {
 	ensureScorerFactoryRegistered()
 	return scanner.New(opts)
@@ -53,19 +51,18 @@ func Default() (*Scanner, error) {
 	return New(Options{MinConfidence: 0.9})
 }
 
-// ensureScorerFactoryRegistered wires the embedded classifier into
-// pkg/scanner the first time hush.New is called. Kept lazy so a program
-// that only ever uses hush.New(Options{ModelOff: true}) never drags the
-// ONNX Runtime into the link graph until it calls a non ModelOff path.
+// ensureScorerFactoryRegistered wires the embedded pure-Go classifier
+// into pkg/scanner the first time hush.New is called.
 func ensureScorerFactoryRegistered() {
 	if scanner.DefaultScorerFactory != nil {
 		return
 	}
 	scanner.DefaultScorerFactory = func(threads int) (scanner.Scorer, func() error, error) {
-		c, err := classifier.New(threads)
+		_ = threads // native runtime is single-threaded per Scorer
+		s, err := native.NewBundledScorer()
 		if err != nil {
 			return nil, nil, err
 		}
-		return c, c.Close, nil
+		return s, s.Close, nil
 	}
 }

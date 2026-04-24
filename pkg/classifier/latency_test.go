@@ -1,5 +1,5 @@
-//go:build slow
-// +build slow
+//go:build ort && slow
+// +build ort,slow
 
 package classifier
 

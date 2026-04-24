@@ -9,11 +9,11 @@ Repro:
 - CLI perf: `HUSH_PERF=1 go test -run='^TestPerf_' -v ./cmd/hush/cli/` (default)
             `HUSH_PERF=1 go test -tags=native -run='^TestPerf_' -v ./cmd/hush/cli/` (pure Go)
 
-## Headline (v0.1.0 ORT default vs v0.1.1 pure Go with `-tags=native`)
+## Headline (v0.1.0 ORT default vs v0.1.2 pure Go default)
 
 Cold start, 50 mixed files (25 clean + 25 with planted AWS keys):
 
-| metric                              | v0.1.0 ORT   | v0.1.1 native | delta   |
+| metric                              | v0.1.0 ORT   | v0.1.2 native | delta   |
 | ----------------------------------- | ------------ | ------------- | ------- |
 | Binary size                         | 92 MB        | 93 MB         | +1 MB   |
 | Embedded model                      | 82 MB ONNX   | 84 MB int8 hbin | --    |
@@ -69,11 +69,30 @@ Tolerances enforced in CI: 1e-4 for fp32 vs ORT, 5e-2 for int8 vs fp32.
 ## Build commands
 
 ```
-# default (ORT + CGO + libonnxruntime at runtime)
+# default: pure Go, no CGO, no libonnxruntime, static binary
 go build ./cmd/hush
 
-# pure Go (no CGO, no libonnxruntime, embedded int8 model)
-go build -tags=native ./cmd/hush
+# testing only: ORT path for numeric equivalence diffs
+go build -tags=ort ./cmd/hush
 ```
+
+## Next goals (Tier 1 optimizations)
+
+Queued and tracked here so each lands with numbers:
+
+1. **Weight pre-packing at load time** — target -20%. Store each weight
+   in the exact layout `matmulBlocked` consumes (contiguous B rows by
+   the `mr=4` tile). Eliminates strided access inside the hot loop.
+2. **Tensor arena / pool** — target -10% + much lower GC pressure.
+   Replace the ~500 allocs/forward with a reused workspace sized for
+   the max-seq-len layer. Cuts MB/op from 4 to ~0.5.
+3. **Transpose-free attention** — target -40%. Represent tensors with
+   strides and let `MatMul`/`BatchMatMul` consume arbitrary strides.
+   Saves 6 full `[T, H]` copies per forward.
+4. **NEON / AVX assembly inner loop** — target -50% on top. Borrow
+   `gonum/internal/asm/f32` kernels for the `fma`-style inner product.
+
+Combined target: **27 ms → 5-7 ms per forward**, beating the ORT path
+on per-call and crushing it on startup.
 
 See CHANGELOG.md for the feature story; this file is the numbers-only log.

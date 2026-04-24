@@ -1,19 +1,8 @@
-//go:build !native
+//go:build ort
 
-// Package bundled wires the embedded BitNet classifier into pkg/scanner.
-//
-// Blank-import this package from any binary or test that wants
-// scanner.New to load the embedded model by default:
-//
-//	import (
-//	    "github.com/valllabh/hush/pkg/scanner"
-//	    _ "github.com/valllabh/hush/pkg/bundled"
-//	)
-//
-//	s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
-//
-// Library users who want to stay lightweight (no ORT dependency) should
-// set scanner.Options.ModelOff = true and skip this package.
+// Legacy ORT scorer registration, retained only for -tags=ort builds
+// used for numeric equivalence testing against the pure-Go runtime.
+// Shipping binaries do not include this path.
 package bundled
 
 import (

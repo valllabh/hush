@@ -39,22 +39,23 @@ repo still finishes in seconds.
 
 ## Install
 
+A single static binary. No runtime dependencies — not Python, not
+libonnxruntime, not a shared library. Download, `chmod +x`, run.
+
 ```
-# macOS
-brew install valllabh/tap/hush
+# prebuilt static binaries
+curl -sSL https://github.com/valllabh/hush/releases/latest/download/hush_0.1.2_linux_amd64.tar.gz | tar xz
+./hush_0.1.2_linux_amd64/hush version
 
 # go install
 go install github.com/valllabh/hush/cmd/hush@latest
 
-# prebuilt binaries (bundle libonnxruntime, just extract and run)
-curl -sSL https://github.com/valllabh/hush/releases/latest/download/hush_0.1.0_linux_amd64.tar.gz | tar xz
-
 # docker
 docker run --rm -v "$PWD:/src:ro" ghcr.io/valllabh/hush:latest scan /src
-```
 
-Install also needs ONNX Runtime available on the system. Hush will use the
-system `libonnxruntime` at runtime.
+# macOS (homebrew tap, coming soon)
+# brew install valllabh/tap/hush
+```
 
 ## Quick start
 

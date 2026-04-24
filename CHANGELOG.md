@@ -7,24 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Pure Go inference runtime (`pkg/native`)**. Select at build time with
-  `go build -tags=native ./cmd/hush`. Zero CGO, zero libonnxruntime
-  dependency, a fully static single binary. Embedded int8 model
-  (`hush-model-v1.int8.hbin`, 80 MB) shipped inside the package. Matches
-  ORT numerics within 3e-6 on realistic inputs, 0.011 vs fp32 on the int8
-  path. End-to-end throughput comparable to or faster than the ORT
-  default on mixed workloads.
-- `pkg/native.Scorer`, `NewBundledScorer()`, `LoadScorer`, `LoadScorerReader`
-  for library users who want direct native access.
-- `PERF.md` tracks kernel progression, end-to-end numbers, and numeric
-  correctness per iteration.
+## [0.1.2] - 2026-04-24
 
 ### Changed
-- CLI now selects its classifier backend through `pkg/scanner.DefaultScorerFactory`
-  registered by `pkg/bundled`. The `!native` build tag wires ORT (default);
-  the `native` tag wires the pure Go runtime. `cmd/hush` no longer imports
-  `pkg/classifier` directly.
+- **Pure Go runtime is now the default.** No CGO, no libonnxruntime,
+  no shared library, no runtime dependency of any kind. Just a static
+  binary with the int8 BitNet model embedded inside.
+- The ORT-backed path (`pkg/classifier`, `libonnxruntime`) is gated
+  behind `-tags=ort` and kept only for numeric equivalence testing.
+  Shipping binaries no longer include ORT code.
+- Release pipeline simplified: pure-Go `CGO_ENABLED=0` build per
+  OS/arch, no libonnxruntime download, no lib bundling, no INSTALL.md
+  wrapping. Archive is `hush` + docs.
+
+### Removed
+- `libonnxruntime` dependency from the default build.
+- `lib/` directory from release archives.
+- `ONNXRUNTIME_LIB` environment variable requirement.
+
+## [0.1.1] - 2026-04-24
+
+### Added
+- **Pure Go inference runtime (`pkg/native`)**. Initially opt-in via
+  `go build -tags=native ./cmd/hush`. Embedded int8 model
+  (`hush-model-v1.int8.hbin`, 80 MB). Matches ORT numerics within 3e-6
+  on realistic inputs, 0.011 vs fp32 on the int8 path.
+- `pkg/native.Scorer`, `NewBundledScorer()`, `LoadScorer`, `LoadScorerReader`.
+- `PERF.md` tracks kernel progression and end-to-end numbers per iteration.
+
+### Changed
+- CLI selects its classifier backend through `pkg/scanner.DefaultScorerFactory`
+  registered by `pkg/bundled`. `cmd/hush` no longer imports `pkg/classifier`
+  directly.
 
 ## [0.1.0] - initial public release
 

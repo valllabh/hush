@@ -1,10 +1,11 @@
-//go:build native
+//go:build !ort
 
-// Package bundled wires the embedded BitNet classifier into pkg/scanner.
+// Package bundled wires the embedded classifier into pkg/scanner.
 //
-// Built with `-tags=native`, this file registers the pure-Go runtime
-// from pkg/native instead of the ORT-backed pkg/classifier. No CGO
-// and no libonnxruntime dependency in the resulting binary.
+// Default build: pure-Go runtime from pkg/native. No CGO, no
+// libonnxruntime, single static binary. The ORT-backed path from
+// pkg/classifier is only compiled when `-tags=ort` is set (used for
+// numeric equivalence testing, not for shipping).
 package bundled
 
 import (

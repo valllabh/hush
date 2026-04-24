@@ -2,11 +2,8 @@ version: 2
 
 project_name: hush
 
-# We use the prebuilt builder because hush needs CGO to link libonnxruntime
-# and cross compiling CGO between macOS and Linux is a nightmare. The
-# release workflow builds binaries natively on a platform matrix, stages
-# them in ./staging/{os}_{arch}/, and this config assembles archives,
-# shasums, signatures and the GitHub Release.
+# Static pure-Go binaries built on native-OS matrix runners and staged
+# into ./staging/{os}_{arch}/. No CGO, no libonnxruntime bundling.
 builds:
   - id: hush
     builder: prebuilt
@@ -30,11 +27,7 @@ archives:
       - LICENSE
       - README.md
       - CHANGELOG.md
-      - src: "staging/{{ .Os }}_{{ .Arch }}/lib/*"
-        dst: lib
-        strip_parent: true
-      - src: "staging/{{ .Os }}_{{ .Arch }}/INSTALL.md"
-        dst: INSTALL.md
+      - PERF.md
 
 checksum:
   name_template: SHA256SUMS
@@ -76,13 +69,12 @@ release:
   header: |
     ## hush {{ .Tag }}
 
-    Download the archive for your platform. Each archive bundles the
-    matching libonnxruntime so hush runs out of the box after extraction:
+    Static pure-Go binary — no CGO, no libonnxruntime, no runtime deps.
+    The int8 BitNet model is embedded in the binary.
 
     ```
     tar -xzf hush_{{ .Version }}_linux_amd64.tar.gz
     cd hush_{{ .Version }}_linux_amd64
-    export ONNXRUNTIME_LIB="$PWD/lib/$(ls lib | head -1)"
     ./hush version
     ```
   footer: |

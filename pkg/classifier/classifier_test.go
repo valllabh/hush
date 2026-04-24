@@ -1,3 +1,6 @@
+//go:build ort
+// +build ort
+
 package classifier
 
 import (
