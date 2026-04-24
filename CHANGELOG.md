@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-24
+
+### Performance
+- **NEON SIMD matmul kernel (arm64)**: hand-written 4×4 FMLA kernel
+  replaces the pure-Go inner loop for the packed matmul.
+  BenchmarkForward: **15.0 ms → 10.7 ms (-29%)**.
+- **AVX2 / FMA kernel (amd64)**: XMM-width 4×4 kernel using
+  VBROADCASTSS + VFMADD231PS. Cross-compiles clean; runtime exercised
+  by release CI on linux/amd64.
+- **Fallback**: pure-Go kernel remains for non-arm64/amd64 builds.
+- Numerics unchanged (1e-4 vs ORT, 5e-2 int8 vs fp32). Allocs/op 76,
+  memory/op ~13 KB — same as v0.1.4.
+
+### Commentary
+Tier 1 target was 5-7 ms. We hit ~11 ms. The remaining ~10 ms isn't
+matmul anymore — it's split across embedding lookup, QKV projection,
+softmax, layernorm, and GELU. Further speedups need attacking those
+ops, not the matmul inner loop.
+
 ## [0.1.4] - 2026-04-24
 
 ### Performance
