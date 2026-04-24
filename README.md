@@ -191,6 +191,9 @@ Measured on a MacBook Pro M2, scanning the Samsung CredData repository
 
 See [`hush bench`](cmd/hush/) for reproducible benchmarks.
 
+Full kernel-level history, numeric-equivalence tests, and per-iteration
+deltas: [PERF.md](PERF.md).
+
 ## Model
 
 Hush embeds a BitNet b1.58 classifier, fine tuned on a mix of

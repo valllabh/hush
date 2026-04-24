@@ -22,6 +22,10 @@ macOS, or download from https://github.com/microsoft/onnxruntime/releases).
 3. `gofmt -s -w .` applied.
 4. New public API has doc comments.
 5. Behaviour changes ship with tests.
+6. If the change affects performance (kernel, hot path, binary size,
+   startup, RSS), update [PERF.md](PERF.md) with the new numbers and a
+   dated row in the relevant progression table. Regressions need a
+   written reason.
 
 ## Commit messages
 
