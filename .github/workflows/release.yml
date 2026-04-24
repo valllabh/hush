@@ -78,6 +78,8 @@ jobs:
           set -eux
           cd staging
           for d in hush-*; do mv "$d" "${d#hush-}"; done
+          # actions/upload-artifact strips +x bit; restore it.
+          chmod +x */hush
           ls -la
           for sub in linux_amd64 linux_arm64 darwin_arm64; do
             test -x "$sub/hush"
