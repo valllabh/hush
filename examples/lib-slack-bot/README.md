@@ -14,7 +14,7 @@ a security channel.
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.95})
+s, _ := hush.New(hush.Options{MinConfidence: 0.95})
 
 func onMessage(ev *slackevents.MessageEvent) {
     findings, _ := s.ScanString(ev.Text)

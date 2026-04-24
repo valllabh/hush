@@ -15,7 +15,7 @@ client  ->  hush proxy  ->  LLM provider
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
+s, _ := hush.New(hush.Options{MinConfidence: 0.9})
 
 http.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
     var body map[string]any

@@ -13,7 +13,7 @@ topic.raw  ->  hush filter  ->  topic.clean
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
+s, _ := hush.New(hush.Options{MinConfidence: 0.9})
 for msg := range consumer.Messages() {
     clean, findings, _ := s.Redact(string(msg.Value), "[REDACTED:%s]")
     if len(findings) > 0 {

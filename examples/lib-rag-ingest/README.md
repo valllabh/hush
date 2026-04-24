@@ -13,7 +13,7 @@ source docs  ->  chunker  ->  hush redact  ->  embedder  ->  vector DB
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.85})
+s, _ := hush.New(hush.Options{MinConfidence: 0.85})
 for _, chunk := range chunks {
     clean, findings, _ := s.Redact(chunk.Text, "[REDACTED:%s]")
     if len(findings) > 0 {

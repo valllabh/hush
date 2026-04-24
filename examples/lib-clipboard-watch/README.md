@@ -9,7 +9,7 @@ my API key into a public chat" footgun.
 ```go
 import "golang.design/x/clipboard"
 
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.95})
+s, _ := hush.New(hush.Options{MinConfidence: 0.95})
 clipboard.Init()
 ch := clipboard.Watch(ctx, clipboard.FmtText)
 for data := range ch {

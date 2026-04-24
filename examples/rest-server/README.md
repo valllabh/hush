@@ -25,7 +25,7 @@ Response:
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
+s, _ := hush.New(hush.Options{MinConfidence: 0.9})
 
 http.HandleFunc("/scan", func(w http.ResponseWriter, r *http.Request) {
     body, _ := io.ReadAll(r.Body)

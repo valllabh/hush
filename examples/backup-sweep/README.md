@@ -9,7 +9,7 @@ purge them.
 ```go
 import "github.com/aws/aws-lambda-go/events"
 
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
+s, _ := hush.New(hush.Options{MinConfidence: 0.9})
 
 func handler(ctx context.Context, ev events.S3Event) error {
     for _, rec := range ev.Records {

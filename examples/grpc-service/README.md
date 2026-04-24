@@ -23,7 +23,7 @@ message ScanChunk { bytes data = 1; }
 ## Snippet
 
 ```go
-type server struct { s *scanner.Scanner }
+type server struct { s *hush.Scanner }
 
 func (srv *server) Scan(ctx context.Context, req *pb.ScanRequest) (*pb.ScanResponse, error) {
     findings, _ := srv.s.ScanString(req.Text)

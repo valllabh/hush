@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"os"
 
-	_ "github.com/valllabh/hush/pkg/bundled" // registers embedded classifier
-	"github.com/valllabh/hush/pkg/scanner"
+	"github.com/valllabh/hush"
 )
 
 func main() {
-	s, err := scanner.New(scanner.Options{MinConfidence: 0.9})
+	s, err := hush.New(hush.Options{MinConfidence: 0.9})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "init:", err)
 		os.Exit(2)

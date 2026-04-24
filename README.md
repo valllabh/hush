@@ -78,20 +78,42 @@ Common flags:
 
 ### Library
 
-```go
-import "github.com/valllabh/hush/pkg/scanner"
+One import, product namespace:
 
-s, err := scanner.New(scanner.Options{MinConfidence: 0.9})
+```go
+import "github.com/valllabh/hush"
+
+s, err := hush.New(hush.Options{MinConfidence: 0.9})
 if err != nil { panic(err) }
 defer s.Close()
 
 findings, err := s.ScanReader(strings.NewReader(text))
 for _, f := range findings {
-    fmt.Printf("%s %s score=%.2f\n", f.Rule, f.Redact(), f.Score)
+    fmt.Printf("%s %s confidence=%.2f\n", f.Rule, f.Redacted, f.Confidence)
 }
+
+// redact inline
+masked, findings, _ := s.Redact(text, "[REDACTED:%s]")
+fmt.Println(hush.ModelVersion) // "v1"
 ```
 
 See [`examples/lib-basic`](examples/lib-basic/) for a runnable version.
+
+#### Advanced
+
+Power users can reach the underlying packages to swap the classifier,
+drive extraction directly, or provide a custom model:
+
+```go
+import (
+    "github.com/valllabh/hush/pkg/scanner"
+    "github.com/valllabh/hush/pkg/extractor"
+)
+// bring your own scorer, custom extractor rules, etc.
+```
+
+The `hush.*` API should cover 95% of use cases; reach for `pkg/*`
+when you really need to.
 
 ## Configuration
 

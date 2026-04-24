@@ -9,7 +9,7 @@ of incidents without requiring code changes across your service.
 ```go
 type redactHandler struct {
     inner slog.Handler
-    s     *scanner.Scanner
+    s     *hush.Scanner
 }
 
 func (h *redactHandler) Handle(ctx context.Context, r slog.Record) error {

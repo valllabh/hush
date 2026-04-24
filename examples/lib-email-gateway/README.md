@@ -12,7 +12,7 @@ app  ->  hush SMTP relay  ->  upstream SMTP
 ## Snippet
 
 ```go
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.95})
+s, _ := hush.New(hush.Options{MinConfidence: 0.95})
 
 func onMessage(m *mail.Message) error {
     body, _ := io.ReadAll(m.Body)

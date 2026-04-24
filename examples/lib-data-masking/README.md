@@ -12,9 +12,9 @@ primitive for building LLM prompt sanitizers, log scrubbers, and DLP tools.
 ## Snippet
 
 ```go
-import "github.com/valllabh/hush/pkg/scanner"
+import "github.com/valllabh/hush"
 
-s, _ := scanner.New(scanner.Options{MinConfidence: 0.9})
+s, _ := hush.New(hush.Options{MinConfidence: 0.9})
 defer s.Close()
 
 masked, findings, _ := s.Redact(inputText, "[REDACTED:%s]")
