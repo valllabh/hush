@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-24
+
+### Performance
+- **Weight pre-packing**: pack each matmul weight into an `[N/4, K, 4]`
+  panel layout at load time, plus a 4×4 register-resident kernel that
+  keeps C in 16 scalar registers across the full K reduction.
+  BenchmarkForward: **27.6 ms → 15.3 ms (-44%)**.
+- **Tensor arena + sync.Pool**: per-forward arena reuses float32 buffers,
+  tensor structs, and shape slices across iterations. Allocs per forward
+  **502 → 76 (-85%)**, memory **1.77 MB → 15 KB per op (-99%)**. Wall
+  time another -1.7%.
+- Net: **~45% faster, ~118x less memory pressure** vs v0.1.3 (same
+  numeric correctness, 1e-4 vs ORT, 5e-2 int8 vs fp32).
+
+### Tried and parked
+- Transpose-free attention via stride-aware `Tensor` + zero-copy view.
+  Only 1.3% wall win at T=4 (synthetic bench) and allocs regressed.
+  Reverted; worth revisiting for long-sequence or batched workloads.
+
 ## [0.1.3] - 2026-04-24
 
 ### Added
