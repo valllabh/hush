@@ -74,6 +74,13 @@ func LoadModel(b *Bundle) (*Model, error) {
 	}
 	// mmw loads a matmul weight that may be fp32 or int8 quantized.
 	// The stored layout is always [In, Out] matching MatMul(x, W).
+	//
+	// Int8 weights are EAGERLY dequantized to fp32 at load time so the
+	// forward path runs the tuned fp32 matmul without per-call dequant
+	// allocation. This trades 4x in RAM for matching fp32 throughput;
+	// on the current model the matmul weights are ~75 MB int8 or ~300 MB
+	// fp32, which is still fine for a CLI. Callers who want the int8
+	// kernel live can call NewQuantWeight directly.
 	mmw := func(name string) (*MaybeWeight, error) {
 		t, ok := b.Tensors[name]
 		if !ok {
@@ -98,7 +105,8 @@ func LoadModel(b *Bundle) (*Model, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
 			}
-			return &MaybeWeight{I8: qw}, nil
+			// Eager dequant: one pass at load, zero cost at forward.
+			return &MaybeWeight{F32: qw.DequantizeToF32()}, nil
 		default:
 			return nil, fmt.Errorf("%s: unsupported dtype %d for matmul weight", name, t.DType)
 		}

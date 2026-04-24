@@ -56,13 +56,27 @@ func TestInt8ForwardMatchesFP32(t *testing.T) {
 	fp32Want := []float32{0.5780989527702332, -0.7365155816078186}
 
 	p := int8ModelPath(t)
-	m := loadModelFromPath(t, p)
-
-	// Sanity: at least one layer weight should actually be int8.
-	if !m.Layers[0].QueryW.IsInt8() {
-		t.Fatalf("expected QueryW to be int8, got fp32 (wrong hbin?)")
+	// Inspect the raw bundle to confirm the on-disk weight really is int8.
+	// LoadModel eager-dequantizes int8 weights to fp32 at runtime so
+	// MaybeWeight.IsInt8() reports false once loaded.
+	f, err := os.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bn, err := Read(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	qt, ok := bn.Tensors["m.roberta.encoder.layer.0.attention.self.query.weight"]
+	if !ok || qt.DType != DTypeI8 {
+		t.Fatalf("hbin does not hold int8 layer 0 query.weight (dtype=%d)", qt.DType)
+	}
+	if _, ok := bn.Tensors["m.roberta.encoder.layer.0.attention.self.query.weight.scale"]; !ok {
+		t.Fatal("hbin missing query.weight.scale")
 	}
 
+	m := loadModelFromPath(t, p)
 	T := m.Meta.SeqLen
 	ids := make([]int32, T)
 	mask := make([]int32, T)

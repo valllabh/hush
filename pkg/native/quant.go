@@ -63,11 +63,11 @@ func MatMulInt8(a *Tensor, w *QuantWeight) *Tensor {
 // per-output-channel int8 quantized weight. Exactly one of F32 or I8 is
 // non-nil. Helper MatMul dispatches to the right kernel.
 type MaybeWeight struct {
-	F32 *Tensor      // non-nil for fp32 weights
-	I8  *QuantWeight // non-nil for int8 weights
+	F32 *Tensor      // non-nil for fp32 weights (possibly eager-dequantized)
+	I8  *QuantWeight // non-nil for int8 weights kept as int8 in RAM
 }
 
-// IsInt8 reports whether this is an int8 quantized weight.
+// IsInt8 reports whether this is an int8 quantized weight (still int8 in RAM).
 func (w *MaybeWeight) IsInt8() bool { return w.I8 != nil }
 
 // MatMul dispatches to fp32 MatMul or MatMulInt8 depending on storage.
@@ -79,4 +79,25 @@ func (w *MaybeWeight) MatMul(a *Tensor) *Tensor {
 		return MatMulInt8(a, w.I8)
 	}
 	return MatMul(a, w.F32)
+}
+
+// DequantizeToF32 eagerly materializes an int8 QuantWeight into a fp32
+// *Tensor of shape [In, Out]. Callers can wrap the result in a MaybeWeight
+// to run the fast fp32 path with no per-call dequant allocation.
+//
+// Memory impact: 4x vs keeping int8, but for sub-100MB matmul weights
+// this is still small compared to the whole process. Use this at load
+// time if you care about throughput more than RAM.
+func (qw *QuantWeight) DequantizeToF32() *Tensor {
+	out := NewTensor(qw.In, qw.Out)
+	for k := 0; k < qw.In; k++ {
+		srcOff := k * qw.Out
+		dstOff := k * qw.Out
+		src := qw.Data[srcOff : srcOff+qw.Out]
+		dst := out.Data[dstOff : dstOff+qw.Out]
+		for j := 0; j < qw.Out; j++ {
+			dst[j] = float32(src[j]) * qw.Scale[j]
+		}
+	}
+	return out
 }
