@@ -95,9 +95,17 @@ Queued and tracked here so each lands with numbers:
 2. **Tensor arena / pool** — target -10% + much lower GC pressure.
    Replace the ~500 allocs/forward with a reused workspace sized for
    the max-seq-len layer. Cuts MB/op from 4 to ~0.5.
-3. **Transpose-free attention** — target -40%. Represent tensors with
-   strides and let `MatMul`/`BatchMatMul` consume arbitrary strides.
-   Saves 6 full `[T, H]` copies per forward.
+3. ~~**Transpose-free attention**~~ — **tried and reverted on T=4 bench.**
+   Implemented stride-aware `Tensor` + zero-copy `TransposeView` and a
+   strided `BatchMatMul` path. Numeric tests stayed green but the wall
+   speedup on the synthetic benchmark was only 1.3% (15.1 ms -> 14.9 ms)
+   and allocs went **up** (76 -> 100) because the strided kernel's
+   inner loop is slower per-element than the contiguous blocked kernel
+   and stride-slice bookkeeping added small allocations. With T=4 the
+   full transposes were already cheap (tiny tensors) so there was
+   nothing meaningful to save. Leave this on the table for longer
+   sequences (e.g. streaming / batch >1 workloads) where the ratio
+   tips the other way.
 4. **NEON / AVX assembly inner loop** — target -50% on top. Borrow
    `gonum/internal/asm/f32` kernels for the `fma`-style inner product.
 
