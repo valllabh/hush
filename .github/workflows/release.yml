@@ -62,8 +62,22 @@ jobs:
         run: |
           set -eux
           stage="staging/${{ matrix.target.os_arch }}"
-          shopt -s nullglob
-          cp /tmp/ort/lib/${{ matrix.target.libglob }} "$stage/lib/"
+          mkdir -p "$stage/lib"
+          # Find every libonnxruntime file (and its symlinks) under /tmp/ort
+          # and copy them in. Robust to archive layouts that nest the lib
+          # under extra subdirectories.
+          echo "Contents of /tmp/ort:"
+          find /tmp/ort -maxdepth 4 -type f -o -type l | head -40
+          mapfile -t files < <(find /tmp/ort \( -name 'libonnxruntime*.dylib' -o -name 'libonnxruntime.so*' \))
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERROR: no libonnxruntime files found under /tmp/ort" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            cp -P "$f" "$stage/lib/"
+          done
+          echo "Staged:"
+          ls -la "$stage/lib"
           first_lib=$(ls "$stage/lib" | head -1)
           cat > "$stage/INSTALL.md" <<EOF
           # hush ${GITHUB_REF_NAME}
