@@ -9,6 +9,7 @@ import (
 
 	"github.com/sugarme/tokenizer"
 	"github.com/sugarme/tokenizer/pretrained"
+	"github.com/valllabh/hush/pkg/scanner"
 )
 
 // Scorer wraps a loaded Model plus its tokenizer and presents the
@@ -141,4 +142,81 @@ func softmax2(a, b float64) float64 {
 	m := math.Max(a, b)
 	ea, eb := math.Exp(a-m), math.Exp(b-m)
 	return eb / (ea + eb)
+}
+
+// BatchScore scores multiple candidates in a single transformer forward
+// pass. It tokenizes each triple, pads each example to the batch's max
+// encoded length (capped by maxLen), stacks the result into [B, T] int32
+// arrays, and runs Model.ForwardBatch once.
+//
+// Returns probabilities in the same order as the input. An empty input
+// yields an empty result. Numerically matches calling Score on each
+// triple to within fp32 reassociation drift; see scanner.Scan for the
+// fallback path used when a scorer doesn't implement this.
+//
+// Satisfies scanner.BatchScorer.
+func (s *Scorer) BatchScore(triples []scanner.SpanTriple) ([]float64, error) {
+	if len(triples) == 0 {
+		return nil, nil
+	}
+	B := len(triples)
+
+	// Encode each triple; remember pre-pad length so we can find the
+	// batch's max length without capping below the longest.
+	idsList := make([][]int, B)
+	maskList := make([][]int, B)
+	maxT := 0
+	for i, tr := range triples {
+		text := tr.Left + "[CAND]" + tr.Span + "[/CAND]" + tr.Right
+		enc, err := s.tk.EncodeSingle(text, true)
+		if err != nil {
+			return nil, fmt.Errorf("encode[%d]: %w", i, err)
+		}
+		ids := enc.Ids
+		mask := enc.AttentionMask
+		if len(ids) > s.maxLen {
+			ids = ids[:s.maxLen]
+			mask = mask[:s.maxLen]
+		}
+		idsList[i] = ids
+		maskList[i] = mask
+		if len(ids) > maxT {
+			maxT = len(ids)
+		}
+	}
+	if maxT == 0 {
+		// Edge case: all-empty tokenization; return zero probabilities.
+		out := make([]float64, B)
+		return out, nil
+	}
+
+	// Pad each to maxT (RoBERTa pad_token_id=1, mask=0).
+	idsFlat := make([]int32, B*maxT)
+	maskFlat := make([]int32, B*maxT)
+	for i := 0; i < B; i++ {
+		off := i * maxT
+		ids := idsList[i]
+		mask := maskList[i]
+		for j, v := range ids {
+			idsFlat[off+j] = int32(v)
+			maskFlat[off+j] = int32(mask[j])
+		}
+		for j := len(ids); j < maxT; j++ {
+			idsFlat[off+j] = 1 // pad token
+			// maskFlat already 0
+		}
+	}
+
+	logits := s.model.ForwardBatch(idsFlat, maskFlat, B)
+	if len(logits) != B {
+		return nil, fmt.Errorf("ForwardBatch returned %d, want %d", len(logits), B)
+	}
+	out := make([]float64, B)
+	for i, lg := range logits {
+		if len(lg) != 2 {
+			return nil, fmt.Errorf("expected 2 logits at %d, got %d", i, len(lg))
+		}
+		out[i] = softmax2(float64(lg[0]), float64(lg[1]))
+	}
+	return out, nil
 }

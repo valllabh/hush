@@ -417,3 +417,186 @@ func (m *Model) forwardLayer(ar *Arena, x *Tensor, addMask []float32, L *Layer) 
 func splitHeads(ar *Arena, x *Tensor, T, heads, d int) *Tensor {
 	return transposeArena(ar, reshapeArena(ar, x, T, heads, d), []int{1, 0, 2})
 }
+
+// splitHeadsBatch reshapes [B*T, H] -> [B*heads, T, d] where H = heads * d.
+func splitHeadsBatch(ar *Arena, x *Tensor, B, T, heads, d int) *Tensor {
+	y := reshapeArena(ar, x, B, T, heads, d)
+	y = transposeArena(ar, y, []int{0, 2, 1, 3}) // [B, heads, T, d]
+	return reshapeArena(ar, y, B*heads, T, d)
+}
+
+// applyAdditiveMaskBatch adds per-example masks to an attention scores
+// tensor of shape [B*heads, T, T]. mask is shape [B, T]; broadcasts across
+// heads and query rows.
+func applyAdditiveMaskBatch(x *Tensor, mask []float32, B, heads, T int) {
+	BH := B * heads
+	for bh := 0; bh < BH; bh++ {
+		b := bh / heads
+		mOff := b * T
+		xOff := bh * T * T
+		for i := 0; i < T; i++ {
+			row := xOff + i*T
+			for j := 0; j < T; j++ {
+				x.Data[row+j] += mask[mOff+j]
+			}
+		}
+	}
+}
+
+// ForwardBatch runs the classifier over B examples in a single pass.
+// inputIDs and attentionMask are both length B*seqLen, each example
+// occupying a contiguous row. Returns a slice of length B, each entry
+// holding OutputClasses logits. Matches looping Forward numerically to
+// within fp32 reassociation drift. Dynamic T trim is per-batch (max
+// effective length).
+func (m *Model) ForwardBatch(inputIDs, attentionMask []int32, B int) [][]float32 {
+	if B <= 0 {
+		return nil
+	}
+	if len(attentionMask) != len(inputIDs) || len(inputIDs)%B != 0 {
+		panic(fmt.Sprintf("ForwardBatch: inputIDs=%d mask=%d B=%d", len(inputIDs), len(attentionMask), B))
+	}
+	H := m.Meta.Hidden
+	heads := m.Meta.Heads
+	d := H / heads
+	seqLen := len(inputIDs) / B
+
+	ar := getArena()
+	defer putArena(ar)
+
+	T := 0
+	for b := 0; b < B; b++ {
+		off := b * seqLen
+		t := seqLen
+		for t > 0 && attentionMask[off+t-1] == 0 {
+			t--
+		}
+		if t > T {
+			T = t
+		}
+	}
+	if T == 0 {
+		out := make([][]float32, B)
+		for b := 0; b < B; b++ {
+			out[b] = make([]float32, m.Meta.OutputClasses)
+		}
+		return out
+	}
+
+	idsFlat := make([]int32, B*T)
+	maskFlat := make([]int32, B*T)
+	for b := 0; b < B; b++ {
+		copy(idsFlat[b*T:(b+1)*T], inputIDs[b*seqLen:b*seqLen+T])
+		copy(maskFlat[b*T:(b+1)*T], attentionMask[b*seqLen:b*seqLen+T])
+	}
+
+	x := gatherArena(ar, m.WordEmb, idsFlat, B, T) // [B, T, H]
+
+	posIDs := make([]int32, B*T)
+	pad := int32(m.Meta.PaddingIdx)
+	for b := 0; b < B; b++ {
+		running := int32(0)
+		for i := 0; i < T; i++ {
+			if maskFlat[b*T+i] == 1 {
+				running++
+				posIDs[b*T+i] = pad + running
+			} else {
+				posIDs[b*T+i] = pad
+			}
+		}
+	}
+	posEmbeds := gatherArena(ar, m.PosEmb, posIDs, B, T)
+	AddInPlace(x, posEmbeds)
+
+	typeIDs := make([]int32, B*T)
+	typeEmbeds := gatherArena(ar, m.TypeEmb, typeIDs, B, T)
+	AddInPlace(x, typeEmbeds)
+
+	x = layerNormArena(ar, x, m.EmbLN_W, m.EmbLN_B, 1e-5)
+
+	addMask := make([]float32, B*T)
+	for i := 0; i < B*T; i++ {
+		if maskFlat[i] == 0 {
+			addMask[i] = -1e9
+		}
+	}
+
+	for li := 0; li < m.Meta.Layers; li++ {
+		x = m.forwardLayerBatch(ar, x, addMask, &m.Layers[li], B, T, heads, d)
+	}
+
+	cls := make([]float32, B*H)
+	for b := 0; b < B; b++ {
+		copy(cls[b*H:(b+1)*H], x.Data[b*T*H:b*T*H+H])
+	}
+	clsT := FromSlice([]int{B, H}, cls)
+
+	h := m.ClsDenseW.MatMul(clsT) // [B, H]
+	AddBias(h, m.ClsDenseB)
+	for i := range h.Data {
+		h.Data[i] = float32(math.Tanh(float64(h.Data[i])))
+	}
+
+	out := m.ClsOutW.MatMul(h) // [B, num_classes]
+	AddBias(out, m.ClsOutB)
+
+	C := m.Meta.OutputClasses
+	res := make([][]float32, B)
+	for b := 0; b < B; b++ {
+		r := make([]float32, C)
+		copy(r, out.Data[b*C:(b+1)*C])
+		res[b] = r
+	}
+	return res
+}
+
+// forwardLayerBatch is the batched analogue of forwardLayer. x is [B, T, H].
+func (m *Model) forwardLayerBatch(ar *Arena, x *Tensor, addMask []float32, L *Layer, B, T, heads, d int) *Tensor {
+	H := heads * d
+	scale := float32(1.0 / math.Sqrt(float64(d)))
+
+	x2d := reshapeArena(ar, x, B*T, H) // [B*T, H]
+
+	q := L.QueryW.matMulArena(ar, x2d)
+	AddBias(q, L.QueryB)
+	k := L.KeyW.matMulArena(ar, x2d)
+	AddBias(k, L.KeyB)
+	v := L.ValueW.matMulArena(ar, x2d)
+	AddBias(v, L.ValueB)
+
+	q3 := splitHeadsBatch(ar, q, B, T, heads, d) // [B*heads, T, d]
+	k3 := splitHeadsBatch(ar, k, B, T, heads, d)
+	v3 := splitHeadsBatch(ar, v, B, T, heads, d)
+
+	kT := transposeArena(ar, k3, []int{0, 2, 1}) // [B*heads, d, T]
+
+	scores := batchMatMulArena(ar, q3, kT) // [B*heads, T, T]
+	ScaleInPlace(scores, scale)
+	applyAdditiveMaskBatch(scores, addMask, B, heads, T)
+
+	attn := softmaxArena(ar, scores)
+
+	ctx := batchMatMulArena(ar, attn, v3) // [B*heads, T, d]
+
+	ctx4 := reshapeArena(ar, ctx, B, heads, T, d)
+	ctxT := transposeArena(ar, ctx4, []int{0, 2, 1, 3}) // [B, T, heads, d]
+	ctx2d := reshapeArena(ar, ctxT, B*T, H)
+
+	out := L.AttnOutW.matMulArena(ar, ctx2d)
+	AddBias(out, L.AttnOutB)
+
+	out = addArena(ar, out, x2d)
+	out = layerNormArena(ar, out, L.Attn1LN_W, L.Attn1LN_B, 1e-5)
+
+	inter := L.InterW.matMulArena(ar, out)
+	AddBias(inter, L.InterB)
+	inter = geluArena(ar, inter)
+
+	ffnOut := L.OutputW.matMulArena(ar, inter)
+	AddBias(ffnOut, L.OutputB)
+
+	ffnOut = addArena(ar, ffnOut, out)
+	ffnOut = layerNormArena(ar, ffnOut, L.Out2LN_W, L.Out2LN_B, 1e-5)
+
+	return reshapeArena(ar, ffnOut, B, T, H)
+}

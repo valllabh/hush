@@ -27,16 +27,57 @@ type Scorer interface {
 	Score(left, span, right string) (float64, error)
 }
 
+// SpanTriple is one candidate to batch-score: left context, span, right
+// context. Re-exported from native semantics for scanner callers that
+// only import pkg/scanner.
+type SpanTriple struct {
+	Left, Span, Right string
+}
+
+// BatchScorer is an optional extension to Scorer. When the concrete
+// scorer implements it, scanner.Scan collects all candidates first and
+// runs one batched transformer forward pass instead of N sequential
+// Score calls. Falls back to per-candidate Score otherwise.
+type BatchScorer interface {
+	BatchScore(triples []SpanTriple) ([]float64, error)
+}
+
 // Scan finds candidates, optionally filters with the model, returns findings.
 func Scan(text string, threshold float64, entropyThreshold float64, ctxChars int, scorer Scorer) ([]Finding, error) {
 	cands := extractor.Extract(text, ctxChars, entropyThreshold)
-	out := make([]Finding, 0, len(cands))
-	for _, c := range cands {
-		conf := 1.0
-		if scorer != nil {
-			p, err := scorer.Score(c.LeftCtx, c.Span, c.RightCtx)
+	if len(cands) == 0 {
+		return nil, nil
+	}
+
+	// Batched fast path: one transformer forward over all candidates.
+	var probs []float64
+	if scorer != nil {
+		if bs, ok := scorer.(BatchScorer); ok {
+			triples := make([]SpanTriple, len(cands))
+			for i, c := range cands {
+				triples[i] = SpanTriple{Left: c.LeftCtx, Span: c.Span, Right: c.RightCtx}
+			}
+			ps, err := bs.BatchScore(triples)
 			if err != nil {
 				return nil, err
+			}
+			probs = ps
+		}
+	}
+
+	out := make([]Finding, 0, len(cands))
+	for i, c := range cands {
+		conf := 1.0
+		if scorer != nil {
+			var p float64
+			var err error
+			if probs != nil {
+				p = probs[i]
+			} else {
+				p, err = scorer.Score(c.LeftCtx, c.Span, c.RightCtx)
+				if err != nil {
+					return nil, err
+				}
 			}
 			conf = p
 			if p < threshold {
