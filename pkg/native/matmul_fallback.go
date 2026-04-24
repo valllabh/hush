@@ -5,6 +5,15 @@ package native
 // Pure-Go fallback of the 4x4 packed kernel for architectures without a
 // hand-written SIMD kernel (e.g. riscv64). Mirrors the register-tile body
 // of matmulPacked's fast path.
+func matmulPackedPanels(a0, a1, a2, a3 []float32, bPacked []float32, K, panels int, c0, c1, c2, c3 []float32) {
+	const nr = 4
+	for p := 0; p < panels; p++ {
+		bp := bPacked[p*K*nr : (p+1)*K*nr]
+		j := p * nr
+		matmulPackedInner4x4(a0, a1, a2, a3, bp, K, c0[j:j+nr], c1[j:j+nr], c2[j:j+nr], c3[j:j+nr])
+	}
+}
+
 func matmulPackedInner4x4(a0, a1, a2, a3 []float32, bp []float32, K int, c0, c1, c2, c3 []float32) {
 	var r00, r01, r02, r03 float32
 	var r10, r11, r12, r13 float32

@@ -12,6 +12,17 @@ import "unsafe"
 //go:noescape
 func matmul4x4Kernel(a0, a1, a2, a3 *float32, bp *float32, K int, c0, c1, c2, c3 *float32)
 
+// matmulPackedPanels loops over panels in Go on amd64 (no batched ASM
+// variant yet); each panel still hits the FMA 4x4 kernel.
+func matmulPackedPanels(a0, a1, a2, a3 []float32, bPacked []float32, K, panels int, c0, c1, c2, c3 []float32) {
+	const nr = 4
+	for p := 0; p < panels; p++ {
+		bp := bPacked[p*K*nr : (p+1)*K*nr]
+		j := p * nr
+		matmulPackedInner4x4(a0, a1, a2, a3, bp, K, c0[j:j+nr], c1[j:j+nr], c2[j:j+nr], c3[j:j+nr])
+	}
+}
+
 func matmulPackedInner4x4(a0, a1, a2, a3 []float32, bp []float32, K int, c0, c1, c2, c3 []float32) {
 	if K == 0 {
 		return

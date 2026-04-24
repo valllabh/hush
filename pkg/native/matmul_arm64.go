@@ -17,6 +17,34 @@ import "unsafe"
 //go:noescape
 func matmul4x4Kernel(a0, a1, a2, a3 *float32, bp *float32, K int, c0, c1, c2, c3 *float32)
 
+// matmul4xNPanels runs the 4x4 kernel across `panels` contiguous B panels
+// in a single ASM call so the Go->ASM call overhead is paid once per
+// row-block rather than once per panel.
+//
+//go:noescape
+func matmul4xNPanels(a0, a1, a2, a3 *float32, bp *float32, K, panels int, c0, c1, c2, c3 *float32)
+
+// matmulPackedPanels is the ASM-backed multi-panel dispatch. It expects
+// the full bPacked slice starting at panel 0 and the full C rows starting
+// at column 0. It accumulates into c0..c3[0 : panels*4].
+func matmulPackedPanels(a0, a1, a2, a3 []float32, bPacked []float32, K, panels int, c0, c1, c2, c3 []float32) {
+	if K == 0 || panels == 0 {
+		return
+	}
+	matmul4xNPanels(
+		(*float32)(unsafe.Pointer(&a0[0])),
+		(*float32)(unsafe.Pointer(&a1[0])),
+		(*float32)(unsafe.Pointer(&a2[0])),
+		(*float32)(unsafe.Pointer(&a3[0])),
+		(*float32)(unsafe.Pointer(&bPacked[0])),
+		K, panels,
+		(*float32)(unsafe.Pointer(&c0[0])),
+		(*float32)(unsafe.Pointer(&c1[0])),
+		(*float32)(unsafe.Pointer(&c2[0])),
+		(*float32)(unsafe.Pointer(&c3[0])),
+	)
+}
+
 // matmulPackedInner4x4 is the ASM-backed dispatch for the hot 4x4 tile.
 // It is called from matmulPacked. Keeping a thin wrapper lets us swap
 // kernels per-arch without touching the caller.

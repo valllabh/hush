@@ -42,8 +42,12 @@ Trade: no libonnxruntime, simpler deployment, comparable speed.
 | int8 weights + eager dequant at load            | 27.2 ms   | 4     | 502       |
 | pre-packed B + 4x4 register-tile kernel         | 15.3 ms   | 1.8   | 502       |
 | per-forward tensor arena + sync.Pool reuse      | 15.1 ms   | 0.015 | 76        |
+| NEON 4x4 ASM inner kernel (arm64)               | 11.1 ms   | 0.013 | 76        |
+| NEON multi-panel ASM (amortize call overhead)   | 10.7 ms   | 0.013 | 76        |
 
-Cumulative: **~290x** faster than the initial straight translation.
+Cumulative: **~410x** faster than the initial straight translation.
+AMD64 ships with a symmetric XMM + VFMADD231PS kernel (cross-compile
+verified; runtime not benchmarked on this host).
 
 ## Numeric correctness
 

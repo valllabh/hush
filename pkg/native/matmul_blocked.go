@@ -125,20 +125,13 @@ func matmulPacked(aData, bPacked, cData []float32, M, K, N int) {
 		c2Row := cData[(i+2)*N : (i+2)*N+N]
 		c3Row := cData[(i+3)*N : (i+3)*N+N]
 
-		for p := 0; p < panels; p++ {
-			jBase := p * nr
-			bp := bPacked[p*K*nr : (p+1)*K*nr]
-			// Hand-written SIMD kernel (NEON on arm64, AVX/FMA on amd64,
-			// pure-Go fallback elsewhere). Accumulates into the 4-wide C
-			// tile, preserving the += semantics required by callers.
-			matmulPackedInner4x4(
-				a0, a1, a2, a3,
-				bp, K,
-				c0Row[jBase:jBase+nr],
-				c1Row[jBase:jBase+nr],
-				c2Row[jBase:jBase+nr],
-				c3Row[jBase:jBase+nr],
-			)
+		// Hand-written SIMD kernel (NEON on arm64, AVX/FMA on amd64,
+		// pure-Go fallback elsewhere). matmulPackedPanels walks all panels
+		// for this row-block in one call on arm64, keeping the A rows hot
+		// across panels; other arches loop in Go but still hit an ASM
+		// 4x4 inner.
+		if panels > 0 {
+			matmulPackedPanels(a0, a1, a2, a3, bPacked[:panels*K*nr], K, panels, c0Row, c1Row, c2Row, c3Row)
 		}
 		// tail panel (width = tail < nr)
 		if tail > 0 {
