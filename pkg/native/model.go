@@ -129,7 +129,9 @@ func LoadModel(b *Bundle) (*Model, error) {
 		}
 		switch t.DType {
 		case DTypeF32:
-			return &MaybeWeight{F32: FromSlice(t.Shape, t.F32)}, nil
+			tt := FromSlice(t.Shape, t.F32)
+			tt.PackForMatMul()
+			return &MaybeWeight{F32: tt}, nil
 		case DTypeI8:
 			s, ok := b.Tensors[name+".scale"]
 			if !ok {
@@ -147,7 +149,9 @@ func LoadModel(b *Bundle) (*Model, error) {
 				return nil, fmt.Errorf("%s: %w", name, err)
 			}
 			// Eager dequant: one pass at load, zero cost at forward.
-			return &MaybeWeight{F32: qw.DequantizeToF32()}, nil
+			fp := qw.DequantizeToF32()
+			fp.PackForMatMul()
+			return &MaybeWeight{F32: fp}, nil
 		default:
 			return nil, fmt.Errorf("%s: unsupported dtype %d for matmul weight", name, t.DType)
 		}
@@ -164,7 +168,9 @@ func LoadModel(b *Bundle) (*Model, error) {
 		switch t.DType {
 		case DTypeF32:
 			src := FromSlice(t.Shape, t.F32)
-			return &MaybeWeight{F32: Transpose(src, []int{1, 0})}, nil
+			tt := Transpose(src, []int{1, 0})
+			tt.PackForMatMul()
+			return &MaybeWeight{F32: tt}, nil
 		case DTypeI8:
 			return mmw(name)
 		default:

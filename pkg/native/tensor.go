@@ -8,6 +8,15 @@ import "fmt"
 type Tensor struct {
 	Shape []int
 	Data  []float32
+
+	// Packed, if non-nil, holds a pre-packed copy of Data in the layout
+	// consumed by matmulPacked: for a [K, N] tensor this is
+	//   [ceil(N/packNR), K, packNR]   (with a smaller tail panel)
+	// Callers that use this tensor as the B matrix of a matmul should
+	// prefer MatMulPacked when Packed != nil. Data is still kept for
+	// correctness fallbacks and for tensors that are transposed/consumed
+	// differently.
+	Packed []float32
 }
 
 // NewTensor allocates a zero-filled tensor with the given shape.
@@ -43,6 +52,18 @@ func (t *Tensor) Stride() []int {
 		s *= t.Shape[i]
 	}
 	return strides
+}
+
+// PackForMatMul pre-packs a 2D [K, N] tensor into the layout consumed by
+// matmulPacked and stores it on t.Packed. Safe to call multiple times
+// (re-packs). Panics if t is not 2D.
+func (t *Tensor) PackForMatMul() *Tensor {
+	if len(t.Shape) != 2 {
+		panic(fmt.Sprintf("PackForMatMul needs 2D tensor, got %v", t.Shape))
+	}
+	K, N := t.Shape[0], t.Shape[1]
+	t.Packed = packB(t.Data, K, N)
+	return t
 }
 
 // Clone returns a copy.

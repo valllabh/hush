@@ -40,8 +40,9 @@ Trade: no libonnxruntime, simpler deployment, comparable speed.
 | dynamic T trim (skip padded positions)          | 45.5 ms   | 4     | 510       |
 | mr=4 register-tiled blocked matmul              | 28.7 ms   | 4     | 510       |
 | int8 weights + eager dequant at load            | 27.2 ms   | 4     | 502       |
+| pre-packed B + 4x4 register-tile kernel         | 15.3 ms   | 1.8   | 502       |
 
-Cumulative: **~160x** faster than the initial straight translation.
+Cumulative: **~285x** faster than the initial straight translation.
 
 ## Numeric correctness
 

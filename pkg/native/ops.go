@@ -54,7 +54,11 @@ func MatMul(a, b *Tensor) *Tensor {
 		panic(fmt.Sprintf("MatMul K mismatch: %d vs %d", K, K2))
 	}
 	out := NewTensor(M, N)
-	matmulBlocked(a.Data, b.Data, out.Data, M, K, N)
+	if b.Packed != nil {
+		matmulPacked(a.Data, b.Packed, out.Data, M, K, N)
+	} else {
+		matmulBlocked(a.Data, b.Data, out.Data, M, K, N)
+	}
 	return out
 }
 
