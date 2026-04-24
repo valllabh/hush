@@ -163,7 +163,6 @@ on CPU.
 
 - current version: `hush-model-v1`
 - released with: hush v0.1.0
-- training code: [valllabh/bitmodel-secrets-detection](https://github.com/valllabh/bitmodel-secrets-detection) (private)
 - override at runtime: `hush scan --model ./my-model.onnx`
 
 Read the embedded model version programmatically from Go:
