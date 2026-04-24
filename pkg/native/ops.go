@@ -54,20 +54,7 @@ func MatMul(a, b *Tensor) *Tensor {
 		panic(fmt.Sprintf("MatMul K mismatch: %d vs %d", K, K2))
 	}
 	out := NewTensor(M, N)
-	for i := 0; i < M; i++ {
-		aRow := a.Data[i*K : (i+1)*K]
-		oRow := out.Data[i*N : (i+1)*N]
-		for k := 0; k < K; k++ {
-			av := aRow[k]
-			if av == 0 {
-				continue
-			}
-			bRow := b.Data[k*N : (k+1)*N]
-			for j := 0; j < N; j++ {
-				oRow[j] += av * bRow[j]
-			}
-		}
-	}
+	matmulBlocked(a.Data, b.Data, out.Data, M, K, N)
 	return out
 }
 
@@ -86,20 +73,12 @@ func BatchMatMul(a, b *Tensor) *Tensor {
 		aOff := bi * M * K
 		bOff := bi * K * N
 		oOff := bi * M * N
-		for i := 0; i < M; i++ {
-			aRow := a.Data[aOff+i*K : aOff+(i+1)*K]
-			oRow := out.Data[oOff+i*N : oOff+(i+1)*N]
-			for k := 0; k < K; k++ {
-				av := aRow[k]
-				if av == 0 {
-					continue
-				}
-				bRow := b.Data[bOff+k*N : bOff+(k+1)*N]
-				for j := 0; j < N; j++ {
-					oRow[j] += av * bRow[j]
-				}
-			}
-		}
+		matmulBlocked(
+			a.Data[aOff:aOff+M*K],
+			b.Data[bOff:bOff+K*N],
+			out.Data[oOff:oOff+M*N],
+			M, K, N,
+		)
 	}
 	return out
 }
