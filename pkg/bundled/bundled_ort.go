@@ -1,3 +1,5 @@
+//go:build !native
+
 // Package bundled wires the embedded BitNet classifier into pkg/scanner.
 //
 // Blank-import this package from any binary or test that wants

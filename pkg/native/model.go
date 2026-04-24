@@ -72,6 +72,47 @@ func LoadModel(b *Bundle) (*Model, error) {
 		}
 		return FromSlice(t.Shape, t.F32), nil
 	}
+	// embTen loads an embedding table that may be fp32 or per-row int8.
+	// For int8: shape [R, C], companion "<name>.scale" fp32 [R], dequant is
+	//   W[r, c] = q[r, c] * scale[r]
+	// Eagerly materializes to fp32 so Gather stays unchanged.
+	embTen := func(name string) (*Tensor, error) {
+		t, ok := b.Tensors[name]
+		if !ok {
+			return nil, fmt.Errorf("missing tensor: %s", name)
+		}
+		switch t.DType {
+		case DTypeF32:
+			return FromSlice(t.Shape, t.F32), nil
+		case DTypeI8:
+			s, ok := b.Tensors[name+".scale"]
+			if !ok {
+				return nil, fmt.Errorf("int8 embedding %s missing scale", name)
+			}
+			if s.DType != DTypeF32 {
+				return nil, fmt.Errorf("%s.scale: expected f32", name)
+			}
+			if len(t.Shape) != 2 {
+				return nil, fmt.Errorf("%s: expected 2D int8 embedding, got %v", name, t.Shape)
+			}
+			R, C := t.Shape[0], t.Shape[1]
+			if len(s.F32) != R {
+				return nil, fmt.Errorf("%s.scale: len %d != rows %d", name, len(s.F32), R)
+			}
+			out := NewTensor(R, C)
+			for r := 0; r < R; r++ {
+				sc := s.F32[r]
+				src := t.I8[r*C : (r+1)*C]
+				dst := out.Data[r*C : (r+1)*C]
+				for c := 0; c < C; c++ {
+					dst[c] = float32(src[c]) * sc
+				}
+			}
+			return out, nil
+		default:
+			return nil, fmt.Errorf("%s: unsupported dtype %d for embedding", name, t.DType)
+		}
+	}
 	// mmw loads a matmul weight that may be fp32 or int8 quantized.
 	// The stored layout is always [In, Out] matching MatMul(x, W).
 	//
@@ -132,7 +173,7 @@ func LoadModel(b *Bundle) (*Model, error) {
 	}
 
 	var err error
-	if m.WordEmb, err = ten("m.roberta.embeddings.word_embeddings.weight"); err != nil {
+	if m.WordEmb, err = embTen("m.roberta.embeddings.word_embeddings.weight"); err != nil {
 		return nil, err
 	}
 	if m.PosEmb, err = ten("m.roberta.embeddings.position_embeddings.weight"); err != nil {

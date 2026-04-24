@@ -14,7 +14,11 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/valllabh/hush/internal/walker"
-	"github.com/valllabh/hush/pkg/classifier"
+	// Blank import registers scanner.DefaultScorerFactory. The registered
+	// implementation is selected at build time by the pkg/bundled build
+	// tags: default builds the ORT path, `-tags=native` builds the pure
+	// Go path.
+	_ "github.com/valllabh/hush/pkg/bundled"
 	"github.com/valllabh/hush/pkg/extractor"
 	"github.com/valllabh/hush/pkg/scanner"
 )
@@ -192,15 +196,22 @@ func runScan(cmd *cobra.Command, paths []string) error {
 		}
 	}
 
-	// Load classifier once; shared across workers.
+	// Load classifier once; shared across workers. The concrete backend
+	// (ORT vs pure Go native) is selected at build time via pkg/bundled.
 	var sc scanner.Scorer
 	if !modelOff {
-		clf, err := classifier.New(1)
-		if err != nil {
-			return fmt.Errorf("loading model: %w (tip: install libonnxruntime, or use --model-off)", err)
+		factory := scanner.DefaultScorerFactory
+		if factory == nil {
+			return fmt.Errorf("no scorer factory registered (build without pkg/bundled?)")
 		}
-		defer clf.Close()
-		sc = clf
+		s, closer, err := factory(1)
+		if err != nil {
+			return fmt.Errorf("loading model: %w (tip: try --model-off)", err)
+		}
+		if closer != nil {
+			defer closer()
+		}
+		sc = s
 	}
 
 	// Stdin mode.

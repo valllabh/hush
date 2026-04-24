@@ -22,8 +22,15 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(tmp)
 
 	hushBin = filepath.Join(tmp, "hush")
-	// go build from the parent directory of this cli package.
-	build := exec.Command("go", "build", "-o", hushBin, "../")
+	// go build from the parent directory of this cli package, honouring
+	// the test binary's build tag so the native and default paths are
+	// actually exercised end to end when requested.
+	buildArgs := []string{"build"}
+	if integrationBuildTags != "" {
+		buildArgs = append(buildArgs, "-tags="+integrationBuildTags)
+	}
+	buildArgs = append(buildArgs, "-o", hushBin, "../")
+	build := exec.Command("go", buildArgs...)
 	build.Stdout = os.Stderr
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {

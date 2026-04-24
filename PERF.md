@@ -2,29 +2,28 @@
 
 Hush tracks end-to-end and kernel-level numbers for every iteration so
 regressions are obvious and wins are visible. All numbers are from an
-Apple M4 Pro unless noted; CI on ubuntu-latest is noted separately when
-it differs meaningfully.
+Apple M4 Pro unless noted.
 
 Repro:
 - library benches: `go test -bench=. -benchmem -run=^$ -benchtime=3s ./pkg/native/`
-- CLI perf: `HUSH_PERF=1 go test -run='^TestPerf_' -v ./cmd/hush/cli/`
+- CLI perf: `HUSH_PERF=1 go test -run='^TestPerf_' -v ./cmd/hush/cli/` (default)
+            `HUSH_PERF=1 go test -tags=native -run='^TestPerf_' -v ./cmd/hush/cli/` (pure Go)
 
-## Headline (v0.1.0 → latest unreleased)
+## Headline (v0.1.0 ORT default vs v0.1.1 pure Go with `-tags=native`)
 
-| metric                              | v0.1.0 (ORT) | unreleased (native) | delta |
-| ----------------------------------- | ------------ | ------------------- | ----- |
-| CLI startup (`hush version`)        | 1.25 s       | TBD                 |       |
-| scan 100 files, with model          | 540 ms       | TBD                 |       |
-| scan 100 files, `--model-off`       | 18 ms        | 18 ms               | same  |
-| scan 1000 files, `--model-off`      | 40 ms        | 40 ms               | same  |
-| RSS with classifier loaded          | 441 MiB      | TBD                 |       |
-| Per-classifier-call latency         | ~13 ms       | 27-29 ms            | TBD\* |
-| Binary size                         | 80 MB        | TBD                 |       |
-| Requires libonnxruntime at runtime  | yes          | no                  |       |
+Cold start, 50 mixed files (25 clean + 25 with planted AWS keys):
 
-\* The pure-Go classifier call is slower per invocation than ORT but
-starts 25x faster, so full CLI wall time is expected to improve sharply.
-End-to-end numbers land when the native backend is wired as the default.
+| metric                              | v0.1.0 ORT   | v0.1.1 native | delta   |
+| ----------------------------------- | ------------ | ------------- | ------- |
+| Binary size                         | 92 MB        | 93 MB         | +1 MB   |
+| Embedded model                      | 82 MB ONNX   | 84 MB int8 hbin | --    |
+| Requires libonnxruntime at runtime  | **yes**      | **no**        | win    |
+| Cold-start scan, 50 files mixed     | 0.56 s       | 0.53 s        | -5%    |
+| Cold-start scan, 50 files x 5 cands | 0.72 s       | 0.62 s        | **-14%** |
+| RSS (ORT or native classifier)      | ~190-440 MB  | ~460-780 MB   | higher\*|
+
+\* Native pays RAM for eager dequant (int8 weights -> fp32 at load).
+Trade: no libonnxruntime, simpler deployment, comparable speed.
 
 ## Native runtime kernel progression
 
@@ -43,28 +42,38 @@ Cumulative: **~160x** faster than the initial straight translation.
 | -------------------------------------------------- | --------------------------- | -------------------------- | ------------ |
 | synthetic IDs [0,100,200,2,...]                    | [0.5780999, -0.73651636]    | [0.57809895, -0.7365156]   | 1e-6         |
 | tokenized `api_key = "[CAND]AKIA...[/CAND]"`       | [-5.3829885, 5.800204]      | [-5.382986, 5.8002005]     | 3.3e-6       |
-| int8 model vs fp32 (same input)                    | —                           | —                          | 0.0128       |
+| int8 model vs fp32 (same input)                    | —                           | —                          | 0.011        |
 
 Tolerances enforced in CI: 1e-4 for fp32 vs ORT, 5e-2 for int8 vs fp32.
 
 ## Model size
 
-| artifact                          | size     |
-| --------------------------------- | -------- |
-| baseline_fp32.onnx                | 313 MB   |
-| baseline_int8.onnx (ORT-exported) | 82 MB    |
-| model.hbin fp32                   | 313 MB   |
-| model_int8.hbin                   | 190 MB\* |
-
-\* Word embeddings still fp32 (154 MB alone). Quantizing embeddings is
-the next crank — target under 100 MB to enable `go:embed`.
+| artifact                          | size     | notes                                |
+| --------------------------------- | -------- | ------------------------------------ |
+| baseline_fp32.onnx                | 313 MB   | research only, too big to ship       |
+| baseline_int8.onnx (ORT-exported) | 82 MB    | shipped in pkg/classifier (ORT path) |
+| model.hbin fp32                   | 313 MB   | dev artifact                         |
+| model_int8.hbin (matmuls only)    | 190 MB   | dev artifact                         |
+| model_int8.hbin (+ embeddings)    | **80 MB**| **shipped in pkg/native**            |
 
 ## Test baseline (reproducible)
 
-- `TestForwardMatchesORT` — synthetic input numeric match
-- `TestForwardMatchesORTRealistic` — tokenized real input numeric match
-- `TestInt8ForwardMatchesFP32` — int8 path vs fp32
+- `TestForwardMatchesORT` — synthetic input numeric match, 1e-4
+- `TestForwardMatchesORTRealistic` — tokenized real input, 3.3e-6
+- `TestInt8ForwardMatchesFP32` — int8 vs fp32, 5e-2
+- `TestBundledScorer` — embedded model end to end, AKIA scores 0.9999
 - `BenchmarkForward` — full forward pass
 - `BenchmarkForwardInt8` — int8 forward pass
+- `TestPerf_*` (HUSH_PERF=1) — CLI wall time + RSS (honours build tag)
+
+## Build commands
+
+```
+# default (ORT + CGO + libonnxruntime at runtime)
+go build ./cmd/hush
+
+# pure Go (no CGO, no libonnxruntime, embedded int8 model)
+go build -tags=native ./cmd/hush
+```
 
 See CHANGELOG.md for the feature story; this file is the numbers-only log.

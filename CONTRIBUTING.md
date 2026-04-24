@@ -15,6 +15,29 @@ Go 1.26 or newer. ONNX Runtime shared library must be present for
 tests that exercise the classifier (`brew install onnxruntime` on
 macOS, or download from https://github.com/microsoft/onnxruntime/releases).
 
+### Build backends
+
+Hush ships two inference backends, selected at build time via Go build tags:
+
+- Default (no tag): ORT backend via `pkg/classifier`. Requires CGO and the
+  ONNX Runtime shared library at runtime. Fastest today.
+
+  ```
+  go build ./cmd/hush
+  ```
+
+- `native` tag: pure-Go runtime via `pkg/native`. No CGO, no libonnxruntime
+  in the shipped binary. Slower end-to-end but trivially portable.
+
+  ```
+  go build -tags=native ./cmd/hush
+  go test  -tags=native ./...
+  ```
+
+The switch is wired in `pkg/bundled/bundled_ort.go` (tag `!native`) and
+`pkg/bundled/bundled_native.go` (tag `native`), both of which register
+`scanner.DefaultScorerFactory`.
+
 ## Before you open a PR
 
 1. `go test ./...` passes.
