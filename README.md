@@ -5,9 +5,9 @@
 <h1 align="center">hush</h1>
 
 <p align="center">
-  <b>Offline AI secrets detection. CPU only.</b><br/>
+  <b>AI based Secrets Detector. Runs on CPU.</b><br/>
   An 80MB binary with a brain. Catches real leaks that regex scanners miss,<br/>
-  ignores the noise they flood you with. No GPU. No cloud. No config.
+  ignores the noise they flood you with. Offline. No GPU. No cloud.
 </p>
 
 <p align="center">
