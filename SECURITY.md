@@ -41,3 +41,28 @@ we take seriously:
 Hush is not a sandbox. Do not scan hostile binaries or rely on hush to
 contain malicious inputs. Run hush as a non-privileged user on untrusted
 paths.
+
+## Verifying a release
+
+Every archive and the SHA256SUMS file is signed with
+[cosign](https://github.com/sigstore/cosign) keyless, using the GitHub
+Actions OIDC identity of the release workflow. No long lived key exists.
+
+```
+VERSION=0.1.0
+ARCH=linux_amd64
+
+curl -sSLO https://github.com/valllabh/hush/releases/download/v${VERSION}/hush_${VERSION}_${ARCH}.tar.gz
+curl -sSLO https://github.com/valllabh/hush/releases/download/v${VERSION}/hush_${VERSION}_${ARCH}.tar.gz.sig
+curl -sSLO https://github.com/valllabh/hush/releases/download/v${VERSION}/hush_${VERSION}_${ARCH}.tar.gz.pem
+
+cosign verify-blob \
+  --certificate hush_${VERSION}_${ARCH}.tar.gz.pem \
+  --signature   hush_${VERSION}_${ARCH}.tar.gz.sig \
+  --certificate-identity-regexp "https://github.com/valllabh/hush/.github/workflows/release.yml@.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  hush_${VERSION}_${ARCH}.tar.gz
+```
+
+A passing verification proves the archive was produced by hush's own
+release workflow at the tagged commit.
