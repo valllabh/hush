@@ -64,19 +64,20 @@ jobs:
           stage="staging/${{ matrix.target.os_arch }}"
           mkdir -p "$stage/lib"
           # Find every libonnxruntime file (and its symlinks) under /tmp/ort
-          # and copy them in. Robust to archive layouts that nest the lib
-          # under extra subdirectories.
+          # and copy them in. Uses while read (bash 3.2 portable, macOS
+          # ships bash 3.2) to iterate find output robustly.
           echo "Contents of /tmp/ort:"
-          find /tmp/ort -maxdepth 4 -type f -o -type l | head -40
-          mapfile -t files < <(find /tmp/ort \( -name 'libonnxruntime*.dylib' -o -name 'libonnxruntime.so*' \))
-          if [ ${#files[@]} -eq 0 ]; then
+          find /tmp/ort \( -type f -o -type l \) -maxdepth 5 | head -60 || true
+          copied=0
+          while IFS= read -r f; do
+            cp -P "$f" "$stage/lib/"
+            copied=$((copied + 1))
+          done < <(find /tmp/ort \( -name 'libonnxruntime*.dylib' -o -name 'libonnxruntime.so*' \))
+          if [ "$copied" -eq 0 ]; then
             echo "ERROR: no libonnxruntime files found under /tmp/ort" >&2
             exit 1
           fi
-          for f in "${files[@]}"; do
-            cp -P "$f" "$stage/lib/"
-          done
-          echo "Staged:"
+          echo "Staged ($copied files):"
           ls -la "$stage/lib"
           first_lib=$(ls "$stage/lib" | head -1)
           cat > "$stage/INSTALL.md" <<EOF
