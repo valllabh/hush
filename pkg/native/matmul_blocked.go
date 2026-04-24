@@ -128,54 +128,17 @@ func matmulPacked(aData, bPacked, cData []float32, M, K, N int) {
 		for p := 0; p < panels; p++ {
 			jBase := p * nr
 			bp := bPacked[p*K*nr : (p+1)*K*nr]
-			// 4x4 register-resident accumulators (nr is compile-time 4)
-			var r00, r01, r02, r03 float32
-			var r10, r11, r12, r13 float32
-			var r20, r21, r22, r23 float32
-			var r30, r31, r32, r33 float32
-			for k := 0; k < K; k++ {
-				v0 := a0[k]
-				v1 := a1[k]
-				v2 := a2[k]
-				v3 := a3[k]
-				bOff := k * 4
-				b0 := bp[bOff]
-				b1 := bp[bOff+1]
-				b2 := bp[bOff+2]
-				b3 := bp[bOff+3]
-				r00 += v0 * b0
-				r01 += v0 * b1
-				r02 += v0 * b2
-				r03 += v0 * b3
-				r10 += v1 * b0
-				r11 += v1 * b1
-				r12 += v1 * b2
-				r13 += v1 * b3
-				r20 += v2 * b0
-				r21 += v2 * b1
-				r22 += v2 * b2
-				r23 += v2 * b3
-				r30 += v3 * b0
-				r31 += v3 * b1
-				r32 += v3 * b2
-				r33 += v3 * b3
-			}
-			c0Row[jBase+0] += r00
-			c0Row[jBase+1] += r01
-			c0Row[jBase+2] += r02
-			c0Row[jBase+3] += r03
-			c1Row[jBase+0] += r10
-			c1Row[jBase+1] += r11
-			c1Row[jBase+2] += r12
-			c1Row[jBase+3] += r13
-			c2Row[jBase+0] += r20
-			c2Row[jBase+1] += r21
-			c2Row[jBase+2] += r22
-			c2Row[jBase+3] += r23
-			c3Row[jBase+0] += r30
-			c3Row[jBase+1] += r31
-			c3Row[jBase+2] += r32
-			c3Row[jBase+3] += r33
+			// Hand-written SIMD kernel (NEON on arm64, AVX/FMA on amd64,
+			// pure-Go fallback elsewhere). Accumulates into the 4-wide C
+			// tile, preserving the += semantics required by callers.
+			matmulPackedInner4x4(
+				a0, a1, a2, a3,
+				bp, K,
+				c0Row[jBase:jBase+nr],
+				c1Row[jBase:jBase+nr],
+				c2Row[jBase:jBase+nr],
+				c3Row[jBase:jBase+nr],
+			)
 		}
 		// tail panel (width = tail < nr)
 		if tail > 0 {
