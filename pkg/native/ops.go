@@ -22,11 +22,13 @@ func AddBias(x *Tensor, bias []float32) *Tensor {
 // Add element-wise with broadcasting only along leading dims. Shapes
 // must match in the trailing axes, and b's shape must be a prefix of a's.
 // For the common case both shapes equal.
-func Add(a, b *Tensor) *Tensor {
+func Add(a, b *Tensor) *Tensor { return addArena(nil, a, b) }
+
+func addArena(ar *Arena, a, b *Tensor) *Tensor {
 	if len(a.Data) != len(b.Data) {
 		panic(fmt.Sprintf("Add shape mismatch: %v vs %v", a.Shape, b.Shape))
 	}
-	out := NewTensor(a.Shape...)
+	out := arenaTensor(ar, a.Shape...)
 	for i, v := range a.Data {
 		out.Data[i] = v + b.Data[i]
 	}
@@ -42,9 +44,9 @@ func AddInPlace(a, b *Tensor) *Tensor {
 }
 
 // MatMul computes a 2D matmul: A [M,K] x B [K,N] -> out [M,N].
-// Standard naive ijk loop; fine for correctness, hot path will optimize
-// later with blocking + SIMD helpers from math/bits.
-func MatMul(a, b *Tensor) *Tensor {
+func MatMul(a, b *Tensor) *Tensor { return matMulArena(nil, a, b) }
+
+func matMulArena(ar *Arena, a, b *Tensor) *Tensor {
 	if len(a.Shape) != 2 || len(b.Shape) != 2 {
 		panic(fmt.Sprintf("MatMul needs 2D tensors, got %v and %v", a.Shape, b.Shape))
 	}
@@ -53,7 +55,7 @@ func MatMul(a, b *Tensor) *Tensor {
 	if K != K2 {
 		panic(fmt.Sprintf("MatMul K mismatch: %d vs %d", K, K2))
 	}
-	out := NewTensor(M, N)
+	out := arenaTensor(ar, M, N)
 	if b.Packed != nil {
 		matmulPacked(a.Data, b.Packed, out.Data, M, K, N)
 	} else {
@@ -63,7 +65,9 @@ func MatMul(a, b *Tensor) *Tensor {
 }
 
 // BatchMatMul computes [B,M,K] x [B,K,N] -> [B,M,N].
-func BatchMatMul(a, b *Tensor) *Tensor {
+func BatchMatMul(a, b *Tensor) *Tensor { return batchMatMulArena(nil, a, b) }
+
+func batchMatMulArena(ar *Arena, a, b *Tensor) *Tensor {
 	if len(a.Shape) != 3 || len(b.Shape) != 3 {
 		panic(fmt.Sprintf("BatchMatMul needs 3D, got %v and %v", a.Shape, b.Shape))
 	}
@@ -72,7 +76,7 @@ func BatchMatMul(a, b *Tensor) *Tensor {
 	if B != B2 || K != K2 {
 		panic(fmt.Sprintf("BatchMatMul shape mismatch: %v vs %v", a.Shape, b.Shape))
 	}
-	out := NewTensor(B, M, N)
+	out := arenaTensor(ar, B, M, N)
 	for bi := 0; bi < B; bi++ {
 		aOff := bi * M * K
 		bOff := bi * K * N
@@ -90,12 +94,16 @@ func BatchMatMul(a, b *Tensor) *Tensor {
 // LayerNorm applies x = (x - mean) / sqrt(var + eps) * gamma + beta
 // over the last axis. Standard fp32 impl matching ONNX LayerNormalization.
 func LayerNorm(x *Tensor, gamma, beta []float32, eps float32) *Tensor {
+	return layerNormArena(nil, x, gamma, beta, eps)
+}
+
+func layerNormArena(ar *Arena, x *Tensor, gamma, beta []float32, eps float32) *Tensor {
 	H := x.Shape[len(x.Shape)-1]
 	if len(gamma) != H || len(beta) != H {
 		panic(fmt.Sprintf("LayerNorm size mismatch: H=%d gamma=%d beta=%d", H, len(gamma), len(beta)))
 	}
 	n := len(x.Data) / H
-	out := NewTensor(x.Shape...)
+	out := arenaTensor(ar, x.Shape...)
 	for i := 0; i < n; i++ {
 		off := i * H
 		// mean
@@ -120,10 +128,12 @@ func LayerNorm(x *Tensor, gamma, beta []float32, eps float32) *Tensor {
 }
 
 // Softmax along the last axis.
-func Softmax(x *Tensor) *Tensor {
+func Softmax(x *Tensor) *Tensor { return softmaxArena(nil, x) }
+
+func softmaxArena(ar *Arena, x *Tensor) *Tensor {
 	H := x.Shape[len(x.Shape)-1]
 	n := len(x.Data) / H
-	out := NewTensor(x.Shape...)
+	out := arenaTensor(ar, x.Shape...)
 	for i := 0; i < n; i++ {
 		off := i * H
 		// max for numerical stability
@@ -151,9 +161,11 @@ func Softmax(x *Tensor) *Tensor {
 // ONNX export path that uses Erf (not the tanh approximation).
 //
 //	GELU(x) = x * 0.5 * (1 + erf(x / sqrt(2)))
-func GELU(x *Tensor) *Tensor {
+func GELU(x *Tensor) *Tensor { return geluArena(nil, x) }
+
+func geluArena(ar *Arena, x *Tensor) *Tensor {
 	const invSqrt2 = 0.7071067811865475
-	out := NewTensor(x.Shape...)
+	out := arenaTensor(ar, x.Shape...)
 	for i, v := range x.Data {
 		out.Data[i] = v * 0.5 * (1 + float32(math.Erf(float64(v)*invSqrt2)))
 	}
@@ -163,15 +175,21 @@ func GELU(x *Tensor) *Tensor {
 // Transpose rearranges axes. Supports arbitrary n-D tensors. General
 // path is slow; callers wanting attention-shape transposes should use
 // Transpose4D below.
-func Transpose(t *Tensor, axes []int) *Tensor {
+func Transpose(t *Tensor, axes []int) *Tensor { return transposeArena(nil, t, axes) }
+
+func transposeArena(ar *Arena, t *Tensor, axes []int) *Tensor {
 	if len(axes) != len(t.Shape) {
 		panic(fmt.Sprintf("Transpose axes %v vs shape %v", axes, t.Shape))
 	}
-	newShape := make([]int, len(axes))
-	for i, a := range axes {
-		newShape[i] = t.Shape[a]
+	var newShape [8]int
+	if len(axes) > len(newShape) {
+		panic("transpose rank > 8 not supported")
 	}
-	out := NewTensor(newShape...)
+	ns := newShape[:len(axes)]
+	for i, a := range axes {
+		ns[i] = t.Shape[a]
+	}
+	out := arenaTensor(ar, ns...)
 	inStrides := t.Stride()
 	outStrides := out.Stride()
 	rank := len(t.Shape)
@@ -192,7 +210,12 @@ func Transpose(t *Tensor, axes []int) *Tensor {
 
 // Reshape returns a tensor sharing t.Data with a new shape (no copy).
 // Panics if the totals do not match.
-func Reshape(t *Tensor, shape ...int) *Tensor {
+func Reshape(t *Tensor, shape ...int) *Tensor { return reshapeArena(nil, t, shape...) }
+
+// reshapeArena returns a view tensor sharing t.Data with a new shape.
+// When ar is non-nil the returned Tensor struct and Shape slice come from
+// the arena so the view is free of heap allocations.
+func reshapeArena(ar *Arena, t *Tensor, shape ...int) *Tensor {
 	n := 1
 	for _, d := range shape {
 		n *= d
@@ -200,15 +223,24 @@ func Reshape(t *Tensor, shape ...int) *Tensor {
 	if n != len(t.Data) {
 		panic(fmt.Sprintf("Reshape totals mismatch: %v vs %v", t.Shape, shape))
 	}
-	return &Tensor{Shape: append([]int(nil), shape...), Data: t.Data}
+	if ar == nil {
+		return &Tensor{Shape: append([]int(nil), shape...), Data: t.Data}
+	}
+	v := ar.view(shape)
+	v.Data = t.Data
+	return v
 }
 
 // Gather is the embedding lookup: given a [V, H] table and an index
 // tensor of shape [B, T], returns a [B, T, H] tensor.
 func Gather(table *Tensor, indices []int32, B, T int) *Tensor {
+	return gatherArena(nil, table, indices, B, T)
+}
+
+func gatherArena(ar *Arena, table *Tensor, indices []int32, B, T int) *Tensor {
 	H := table.Shape[1]
 	V := table.Shape[0]
-	out := NewTensor(B, T, H)
+	out := arenaTensor(ar, B, T, H)
 	for i := 0; i < B*T; i++ {
 		idx := int(indices[i])
 		if idx < 0 || idx >= V {

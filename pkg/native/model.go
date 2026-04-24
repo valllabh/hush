@@ -280,6 +280,8 @@ func LoadModel(b *Bundle) (*Model, error) {
 // is a 20-40x speedup.
 func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 	H := m.Meta.Hidden
+	ar := getArena()
+	defer putArena(ar)
 
 	// Compute effective sequence length = 1 + index of last non-padding token.
 	T := len(inputIDs)
@@ -297,7 +299,7 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 
 	// --- embeddings ---
 	// word_embeddings lookup + position_embeddings + token_type_embeddings
-	x := Gather(m.WordEmb, inputIDs, 1, T) // [1, T, H]
+	x := gatherArena(ar, m.WordEmb, inputIDs, 1, T) // [1, T, H]
 
 	// RoBERTa position ids: for non-padding tokens, pos = padding_idx + cumulative_count.
 	// Padding positions get padding_idx.
@@ -312,16 +314,16 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 			posIDs[i] = pad
 		}
 	}
-	posEmbeds := Gather(m.PosEmb, posIDs, 1, T)
+	posEmbeds := gatherArena(ar, m.PosEmb, posIDs, 1, T)
 	AddInPlace(x, posEmbeds)
 
 	// token_type_embeddings at index 0 (RoBERTa uses single type)
 	typeIDs := make([]int32, T)
-	typeEmbeds := Gather(m.TypeEmb, typeIDs, 1, T)
+	typeEmbeds := gatherArena(ar, m.TypeEmb, typeIDs, 1, T)
 	AddInPlace(x, typeEmbeds)
 
 	// embedding layer norm
-	x = LayerNorm(x, m.EmbLN_W, m.EmbLN_B, 1e-5)
+	x = layerNormArena(ar, x, m.EmbLN_W, m.EmbLN_B, 1e-5)
 
 	// --- additive attention mask: 0 where keep, large negative where pad ---
 	// shape [T] broadcast across heads and query positions
@@ -334,7 +336,7 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 
 	// --- transformer blocks ---
 	for li := 0; li < m.Meta.Layers; li++ {
-		x = m.forwardLayer(x, addMask, &m.Layers[li])
+		x = m.forwardLayer(ar, x, addMask, &m.Layers[li])
 	}
 
 	// --- classifier head: take CLS (index 0) ---
@@ -357,7 +359,7 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 }
 
 // forwardLayer runs a single transformer block.
-func (m *Model) forwardLayer(x *Tensor, addMask []float32, L *Layer) *Tensor {
+func (m *Model) forwardLayer(ar *Arena, x *Tensor, addMask []float32, L *Layer) *Tensor {
 	H := m.Meta.Hidden
 	heads := m.Meta.Heads
 	d := H / heads
@@ -365,70 +367,53 @@ func (m *Model) forwardLayer(x *Tensor, addMask []float32, L *Layer) *Tensor {
 	scale := float32(1.0 / math.Sqrt(float64(d)))
 
 	// Reshape x to 2D for matmuls.
-	x2d := Reshape(x, T, H) // [T, H]
+	x2d := reshapeArena(ar, x, T, H) // [T, H]
 
-	// Q/K/V projections. Our exporter kept W as [H, H] matching ONNX layout
-	// (MatMul(x, W)).
-	q := L.QueryW.MatMul(x2d)
+	// Q/K/V projections.
+	q := L.QueryW.matMulArena(ar, x2d)
 	AddBias(q, L.QueryB)
-	k := L.KeyW.MatMul(x2d)
+	k := L.KeyW.matMulArena(ar, x2d)
 	AddBias(k, L.KeyB)
-	v := L.ValueW.MatMul(x2d)
+	v := L.ValueW.matMulArena(ar, x2d)
 	AddBias(v, L.ValueB)
 
-	// Reshape to [heads, T, d] by splitting last axis into [heads, d]
-	// then transposing [T, heads, d] -> [heads, T, d].
-	q3 := splitHeads(q, T, heads, d)
-	k3 := splitHeads(k, T, heads, d)
-	v3 := splitHeads(v, T, heads, d)
+	q3 := splitHeads(ar, q, T, heads, d)
+	k3 := splitHeads(ar, k, T, heads, d)
+	v3 := splitHeads(ar, v, T, heads, d)
 
-	// kT transpose per head: [heads, T, d] -> [heads, d, T]
-	kT := Transpose(k3, []int{0, 2, 1})
+	kT := transposeArena(ar, k3, []int{0, 2, 1})
 
-	// scores = Q @ K^T / sqrt(d)
-	scores := BatchMatMul(q3, kT) // [heads, T, T]
+	scores := batchMatMulArena(ar, q3, kT)
 	ScaleInPlace(scores, scale)
-
-	// Add mask over the last axis of scores (key positions):
-	// mask is length T, pattern repeats across [heads, T, T].
 	ApplyAdditiveMask(scores, addMask)
 
-	attn := Softmax(scores)
+	attn := softmaxArena(ar, scores)
 
-	// attn @ V -> [heads, T, d]
-	ctx := BatchMatMul(attn, v3)
+	ctx := batchMatMulArena(ar, attn, v3)
 
-	// combine heads: [heads, T, d] -> [T, heads, d] -> [T, H]
-	ctxT := Transpose(ctx, []int{1, 0, 2})
-	ctx2d := Reshape(ctxT, T, H)
+	ctxT := transposeArena(ar, ctx, []int{1, 0, 2})
+	ctx2d := reshapeArena(ar, ctxT, T, H)
 
-	// attention output dense
-	out := L.AttnOutW.MatMul(ctx2d)
+	out := L.AttnOutW.matMulArena(ar, ctx2d)
 	AddBias(out, L.AttnOutB)
 
-	// residual + layernorm
-	out = Add(out, x2d)
-	out = LayerNorm(out, L.Attn1LN_W, L.Attn1LN_B, 1e-5)
+	out = addArena(ar, out, x2d)
+	out = layerNormArena(ar, out, L.Attn1LN_W, L.Attn1LN_B, 1e-5)
 
-	// FFN: intermediate (linear + GELU)
-	inter := L.InterW.MatMul(out)
+	inter := L.InterW.matMulArena(ar, out)
 	AddBias(inter, L.InterB)
-	inter = GELU(inter)
+	inter = geluArena(ar, inter)
 
-	// output dense
-	ffnOut := L.OutputW.MatMul(inter)
+	ffnOut := L.OutputW.matMulArena(ar, inter)
 	AddBias(ffnOut, L.OutputB)
 
-	// residual + layernorm
-	ffnOut = Add(ffnOut, out)
-	ffnOut = LayerNorm(ffnOut, L.Out2LN_W, L.Out2LN_B, 1e-5)
+	ffnOut = addArena(ar, ffnOut, out)
+	ffnOut = layerNormArena(ar, ffnOut, L.Out2LN_W, L.Out2LN_B, 1e-5)
 
-	return Reshape(ffnOut, 1, T, H)
+	return reshapeArena(ar, ffnOut, 1, T, H)
 }
 
 // splitHeads reshapes [T, H] -> [heads, T, d] where H = heads * d.
-// It performs a transpose so heads become the leading dim.
-func splitHeads(x *Tensor, T, heads, d int) *Tensor {
-	// x view as [T, heads, d] -> transpose to [heads, T, d]
-	return Transpose(Reshape(x, T, heads, d), []int{1, 0, 2})
+func splitHeads(ar *Arena, x *Tensor, T, heads, d int) *Tensor {
+	return transposeArena(ar, reshapeArena(ar, x, T, heads, d), []int{1, 0, 2})
 }

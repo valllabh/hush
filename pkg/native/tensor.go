@@ -28,6 +28,17 @@ func NewTensor(shape ...int) *Tensor {
 	return &Tensor{Shape: append([]int(nil), shape...), Data: make([]float32, n)}
 }
 
+// arenaTensor returns a zero-filled tensor of the given shape, using the
+// arena if non-nil, otherwise a fresh allocation. Ops in the forward path
+// call this so they can run either standalone (tests, one-off MatMul) or
+// inside an arena-scoped forward pass.
+func arenaTensor(ar *Arena, shape ...int) *Tensor {
+	if ar == nil {
+		return NewTensor(shape...)
+	}
+	return ar.Get(shape...)
+}
+
 // FromSlice wraps an existing slice as a tensor of the given shape.
 func FromSlice(shape []int, data []float32) *Tensor {
 	n := 1

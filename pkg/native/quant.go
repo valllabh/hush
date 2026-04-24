@@ -74,11 +74,13 @@ func (w *MaybeWeight) IsInt8() bool { return w.I8 != nil }
 // For fp32 weights, the caller must have already oriented the weight to
 // [K, N] (matching MatMul semantics). For int8 weights, the stored
 // layout is always [In, Out] == [K, N].
-func (w *MaybeWeight) MatMul(a *Tensor) *Tensor {
+func (w *MaybeWeight) MatMul(a *Tensor) *Tensor { return w.matMulArena(nil, a) }
+
+func (w *MaybeWeight) matMulArena(ar *Arena, a *Tensor) *Tensor {
 	if w.I8 != nil {
 		return MatMulInt8(a, w.I8)
 	}
-	return MatMul(a, w.F32)
+	return matMulArena(ar, a, w.F32)
 }
 
 // DequantizeToF32 eagerly materializes an int8 QuantWeight into a fp32

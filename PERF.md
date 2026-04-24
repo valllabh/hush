@@ -41,8 +41,9 @@ Trade: no libonnxruntime, simpler deployment, comparable speed.
 | mr=4 register-tiled blocked matmul              | 28.7 ms   | 4     | 510       |
 | int8 weights + eager dequant at load            | 27.2 ms   | 4     | 502       |
 | pre-packed B + 4x4 register-tile kernel         | 15.3 ms   | 1.8   | 502       |
+| per-forward tensor arena + sync.Pool reuse      | 15.1 ms   | 0.015 | 76        |
 
-Cumulative: **~285x** faster than the initial straight translation.
+Cumulative: **~290x** faster than the initial straight translation.
 
 ## Numeric correctness
 
