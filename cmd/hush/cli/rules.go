@@ -46,10 +46,10 @@ To start from the built-in set, dump and edit:
 }
 
 func printRulesTable(w *os.File) {
-	fmt.Fprintf(w, "%-28s  %s\n", "NAME", "PATTERN")
-	fmt.Fprintln(w, "------------------------------  --------------------------------")
+	fmt.Fprintf(w, "%-32s  %-8s  %s\n", "NAME", "TYPE", "PATTERN")
+	fmt.Fprintln(w, "--------------------------------  --------  --------------------------------")
 	for _, r := range extractor.Rules {
-		fmt.Fprintf(w, "%-28s  %s\n", r.Name, r.Regex.String())
+		fmt.Fprintf(w, "%-32s  %-8s  %s\n", r.Name, r.Type, r.Regex.String())
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Plus: high-entropy Shannon scan (threshold via --entropy-threshold)")

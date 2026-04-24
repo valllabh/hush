@@ -9,7 +9,14 @@ Repro:
 - CLI perf: `HUSH_PERF=1 go test -run='^TestPerf_' -v ./cmd/hush/cli/` (default)
             `HUSH_PERF=1 go test -tags=native -run='^TestPerf_' -v ./cmd/hush/cli/` (pure Go)
 
-## Headline (v0.1.0 ORT default vs v0.1.2 pure Go default)
+## Rule coverage
+
+| version | secret rules | pii rules | total |
+| ------- | ------------ | --------- | ----- |
+| v0.1.2  | 9            | 0         | 9     |
+| v0.1.3  | 68           | 24        | 92    |
+
+## Headline (v0.1.0 ORT default vs v0.1.2+ pure Go default)
 
 Cold start, 50 mixed files (25 clean + 25 with planted AWS keys):
 

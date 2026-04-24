@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-24
+
+### Added
+- **Rule set expanded from 9 to 92 built-in patterns**: ports the active
+  gitleaks ruleset (credited in `rules.json`), covering cloud providers
+  (AWS access + secret + session, GCP service-account + OAuth + API,
+  Azure connection string / SAS / account key, DigitalOcean, Linode,
+  Alibaba), AI providers (OpenAI, Anthropic, HuggingFace, Cohere),
+  SaaS (Twilio, SendGrid, Mailgun, PagerDuty, Datadog, New Relic,
+  Cloudflare, Shopify, Square, PayPal, Atlassian, Okta, Auth0, Heroku),
+  webhooks (Slack, Discord, Telegram, Teams), database URIs, package
+  registry tokens, CI PATs, and more.
+- **PII detection**: 24 new PII rules (SSN, SIN, NIN, Aadhaar, PAN,
+  CPF, credit card shape, IBAN, email, phone, IP, MAC, passport, etc.).
+  Tagged `"type": "pii"` in the rule file.
+- **`--detect` flag**: accepts `secrets`, `pii`, `both` (comma combos
+  also ok). Default is `both`. Filters the active rule set by type.
+- Every rule carries a `type` field (`"secret"` or `"pii"`); default is
+  `"secret"` for compatibility with rule files missing the field.
+
+### Fixed
+- `.hush.yaml` in repo root used an old `ext: [py, env, ...]` shape
+  where bare extension names got misinterpreted as directory globs under
+  the new `file-include` classifier, silently excluding every file from
+  directory scans run inside this repo. Switched to `*.py` form.
+
 ## [0.1.2] - 2026-04-24
 
 ### Changed

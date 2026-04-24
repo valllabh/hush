@@ -41,6 +41,7 @@ func addAllFlags(f *pflag.FlagSet) {
 	f.String("rule-file", "", "JSON rules file (see `hush rules --json` for schema)")
 	f.StringSlice("rule-include", nil, "Only use these rule names (allowlist)")
 	f.StringSlice("rule-exclude", nil, "Disable these rule names (blocklist)")
+	f.StringSlice("detect", []string{"both"}, "Which rule types to run: secrets, pii, both (comma-separated)")
 
 	// --- Model: model-* ---
 	f.Bool("model-off", false, "Skip ML filter; use regex+entropy only (faster, more FPs)")

@@ -26,14 +26,23 @@ type Rule struct {
 	Regex *regexp.Regexp
 	// ValueGroup is the capture group index that holds the secret. 0 = whole match.
 	ValueGroup int
+	// Type is "secret" or "pii". Defaults to "secret" when unset.
+	Type string
 }
 
 // RuleJSON is the on-disk / flag form of a rule.
 type RuleJSON struct {
 	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
 	Pattern    string `json:"pattern"`
 	ValueGroup int    `json:"value_group,omitempty"`
 }
+
+// Rule type constants.
+const (
+	RuleTypeSecret = "secret"
+	RuleTypePII    = "pii"
+)
 
 // RulesConfig is the top-level schema accepted by LoadRulesJSON.
 type RulesConfig struct {
@@ -58,6 +67,26 @@ func ActiveRules() []Rule {
 		return Rules
 	}
 	return activeRules
+}
+
+// FilterActiveRulesByTypes narrows the active rule set to the given types
+// (e.g. "secret", "pii"). Empty or nil allows all. Unknown types are ignored.
+func FilterActiveRulesByTypes(types []string) {
+	if len(types) == 0 {
+		return
+	}
+	allow := map[string]bool{}
+	for _, t := range types {
+		allow[t] = true
+	}
+	src := ActiveRules()
+	out := make([]Rule, 0, len(src))
+	for _, r := range src {
+		if allow[r.Type] {
+			out = append(out, r)
+		}
+	}
+	activeRules = out
 }
 
 // BuildActiveRules sets (defaults minus disabled) plus extras as active.
@@ -118,7 +147,11 @@ func compileRules(specs []RuleJSON) ([]Rule, error) {
 		if vg == 0 && re.NumSubexp() >= 1 {
 			vg = 1
 		}
-		out = append(out, Rule{Name: rj.Name, Regex: re, ValueGroup: vg})
+		ty := rj.Type
+		if ty == "" {
+			ty = RuleTypeSecret
+		}
+		out = append(out, Rule{Name: rj.Name, Regex: re, ValueGroup: vg, Type: ty})
 	}
 	return out, nil
 }

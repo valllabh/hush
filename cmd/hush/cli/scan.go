@@ -39,7 +39,7 @@ func NewScanCmd() *cobra.Command {
 func bindAllFlagsToViper(cmd *cobra.Command) {
 	allKeys := []string{
 		"file-include", "file-exclude", "file-max-mb",
-		"rule-add", "rule-file", "rule-include", "rule-exclude",
+		"rule-add", "rule-file", "rule-include", "rule-exclude", "detect",
 		"model-off", "model-threshold",
 		"extract-entropy", "extract-ctx",
 		"output-mask", "output-json", "output-file", "output-placeholder",
@@ -161,6 +161,15 @@ func runScan(cmd *cobra.Command, paths []string) error {
 			return err
 		}
 	}
+	// --detect filters active rules by type (secret / pii).
+	if types := resolveDetectTypes(viper.GetStringSlice("detect")); len(types) > 0 {
+		// ensure activeRules is populated before filtering (BuildActiveRules
+		// with no extras/disabled is a no-op clone of defaults).
+		if len(extractor.ActiveRules()) == len(extractor.Rules) && len(adds) == 0 && len(inc) == 0 && len(exc) == 0 {
+			extractor.BuildActiveRules(nil, nil)
+		}
+		extractor.FilterActiveRulesByTypes(types)
+	}
 
 	modelOff := aliasBool("model-off")
 	threshold := aliasFloat("model-threshold", 0.5)
@@ -226,6 +235,35 @@ func runScan(cmd *cobra.Command, paths []string) error {
 		return &ExitError{Code: 2}
 	}
 	return nil
+}
+
+// resolveDetectTypes expands the --detect flag values (secrets, pii, both, or
+// comma-separated combos) into a list of rule types to keep. Returns nil if
+// the filter is a no-op (i.e. "both" or equivalent).
+func resolveDetectTypes(raw []string) []string {
+	want := map[string]bool{}
+	for _, v := range raw {
+		for _, part := range strings.Split(v, ",") {
+			p := strings.ToLower(strings.TrimSpace(part))
+			switch p {
+			case "", "both", "all":
+				want[extractor.RuleTypeSecret] = true
+				want[extractor.RuleTypePII] = true
+			case "secret", "secrets":
+				want[extractor.RuleTypeSecret] = true
+			case "pii":
+				want[extractor.RuleTypePII] = true
+			}
+		}
+	}
+	if want[extractor.RuleTypeSecret] && want[extractor.RuleTypePII] {
+		return nil
+	}
+	out := make([]string, 0, len(want))
+	for k := range want {
+		out = append(out, k)
+	}
+	return out
 }
 
 // applyRuleControl builds the effective rule set from inline adds + include +

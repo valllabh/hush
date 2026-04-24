@@ -1,17 +1,19 @@
-# hush project-local configuration.
+# hush project-local configuration (used when hush is invoked from this repo).
 # Precedence: CLI flag > HUSH_* env var > this file > built-in default.
 
 workers: 2
-ext: [py, env, yml, yaml, json, go, js, ts, tf, toml, ini, conf]
-skip-dir: [vendor, .terraform, artifacts-bitnet]
+# Limit to common source / config extensions in this repo. Uses *.ext form
+# so walker classifies them as extension allowlists, not directory patterns.
+file-include: ["*.py", "*.env", "*.yml", "*.yaml", "*.json", "*.go", "*.js", "*.ts", "*.tf", "*.toml", "*.ini", "*.conf"]
+file-exclude: ["vendor", ".terraform", "artifacts-bitnet"]
 
 presets:
   strict:
-    threshold: 0.9
-    entropy-threshold: 3.5
+    model-threshold: 0.9
+    extract-entropy: 3.5
   fast:
-    no-model: true
-    workers: 8
+    model-off: true
+    perf-workers: 8
   ci:
-    fail-on-finding: true
-    json: true
+    fail-end: true
+    output-json: true
