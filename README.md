@@ -5,8 +5,9 @@
 <h1 align="center">hush</h1>
 
 <p align="center">
-Local, offline secrets detection powered by a 1 bit quantized model.<br/>
-CLI for humans and CI, Go library for integration.
+  <b>Secrets detection that knows what's really a secret.</b><br/>
+  A learned classifier in an 80MB binary. Catches real leaks, ignores the<br/>
+  noise other scanners flood you with. No GPU. No cloud. No config.
 </p>
 
 <p align="center">
@@ -21,16 +22,20 @@ CLI for humans and CI, Go library for integration.
 
 ## Why hush
 
-Other scanners rely on regex plus entropy and drown you in false positives. Hush
-uses a learned classifier on top of candidate extraction. It runs on CPU, needs
-no network, and the model ships embedded inside the binary. Drop it in a
-pre commit hook, pipe logs through it, or call it from your Go service.
+Every secrets scanner is regex plus entropy. They catch secrets, and they
+catch everything that *looks* like one: UUIDs, commit hashes, base64 blobs,
+minified bundles. Your engineers grow numb, real leaks slip past.
 
-- offline: no telemetry, no network calls, no cloud
-- portable: single static binary or a Go library
-- small: ~80MB binary including the model
-- fast: millisecond scans, thousands of files per second on a laptop
-- accurate: learned classifier reduces false positives vs pure regex
+Hush adds a brain. A 1.58 bit quantized classifier, trained on real and
+synthetic credentials, decides whether a candidate is an actual secret or
+just noise. The whole model fits inside the binary. Scanning an entire
+repo still finishes in seconds.
+
+- **smarter** — learned classifier cuts false positives vs regex alone
+- **smaller** — 80MB binary with the model baked in
+- **portable** — one static binary, any CPU, no GPU
+- **private** — no cloud calls, no telemetry, your bytes stay on your box
+- **everywhere** — CLI, Go library, pre commit hook, CI, log pipeline, LLM proxy
 
 ## Install
 
