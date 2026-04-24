@@ -1,0 +1,19 @@
+name: Bug report
+description: Report a defect in hush
+labels: ["bug"]
+body:
+  - type: input
+    attributes: { label: hush version, placeholder: "run `hush --version`" }
+    validations: { required: true }
+  - type: input
+    attributes: { label: OS / arch, placeholder: "linux/amd64" }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: What happened, description: "Actual behaviour, error message, logs." }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: What you expected }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Reproduction, description: "Minimal steps. A failing input file helps most." }
+    validations: { required: true }

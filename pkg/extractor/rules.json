@@ -1,0 +1,14 @@
+{
+  "_comment": "Default rule set for hush. Each entry: {name, pattern, value_group}. value_group 0 means the whole match is the secret; value_group 1 means capture group 1 is the secret value (used when the regex frames the secret with surrounding keyword/quote tokens). Keep in sync with src/bmsd/extractor/rules.py.",
+  "rules": [
+    {"name": "aws_access_key_id", "pattern": "\\b(?:AKIA|ASIA|AIDA|AGPA|ANPA|AROA|AIPA|ANVA)[0-9A-Z]{16}\\b"},
+    {"name": "github_pat", "pattern": "\\bgh[pousr]_[A-Za-z0-9]{36,}\\b"},
+    {"name": "github_fine_grained_pat", "pattern": "\\bgithub_pat_[A-Za-z0-9_]{22,}\\b"},
+    {"name": "stripe_secret", "pattern": "\\b(?:sk|rk)_(?:test|live)_[A-Za-z0-9]{16,}\\b"},
+    {"name": "slack_bot_token", "pattern": "\\bxox[baprs]-[A-Za-z0-9\\-]{10,}\\b"},
+    {"name": "google_api_key", "pattern": "\\bAIza[0-9A-Za-z\\-_]{35}\\b"},
+    {"name": "jwt", "pattern": "\\beyJ[A-Za-z0-9_\\-]{8,}\\.[A-Za-z0-9_\\-]{8,}\\.[A-Za-z0-9_\\-]{8,}\\b"},
+    {"name": "private_key_pem", "pattern": "-----BEGIN (?:RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"},
+    {"name": "generic_assignment_secret", "pattern": "(?i)(?:password|passwd|secret|token|api[_-]?key|auth)\\s*[:=]\\s*['\"]?([^\\s'\",;{}()]{8,})", "value_group": 1}
+  ]
+}

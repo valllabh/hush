@@ -1,0 +1,17 @@
+# hush project-local configuration.
+# Precedence: CLI flag > HUSH_* env var > this file > built-in default.
+
+workers: 2
+ext: [py, env, yml, yaml, json, go, js, ts, tf, toml, ini, conf]
+skip-dir: [vendor, .terraform, artifacts-bitnet]
+
+presets:
+  strict:
+    threshold: 0.9
+    entropy-threshold: 3.5
+  fast:
+    no-model: true
+    workers: 8
+  ci:
+    fail-on-finding: true
+    json: true

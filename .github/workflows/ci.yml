@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest = linux/amd64
+        # ubuntu-24.04-arm = linux/arm64
+        # macos-latest = darwin/arm64 (Apple Silicon)
+        # macos-13 = darwin/amd64 (Intel)
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+        go: ["1.26"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Install ONNX Runtime (linux amd64)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl -sSL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-linux-x64-1.20.0.tgz
+          tar -xzf ort.tgz
+          sudo cp -r onnxruntime-linux-x64-1.20.0/lib/* /usr/local/lib/
+          sudo ldconfig
+
+      - name: Install ONNX Runtime (linux arm64)
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: |
+          curl -sSL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-linux-aarch64-1.20.0.tgz
+          tar -xzf ort.tgz
+          sudo cp -r onnxruntime-linux-aarch64-1.20.0/lib/* /usr/local/lib/
+          sudo ldconfig
+
+      - name: Install ONNX Runtime (macos)
+        if: runner.os == 'macOS'
+        run: brew install onnxruntime
+
+      - run: go vet ./...
+        working-directory: .
+      - run: go test -race -count=1 ./...
+
+  docker:
+    name: docker image smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.26" }
+      - name: Vendor deps (image builds offline from vendor tree)
+        run: go mod vendor
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: hush:ci
+          load: true
+      - name: Run hush version
+        run: docker run --rm hush:ci version
+      - name: Scan a dirty fixture
+        run: |
+          tmp=$(mktemp -d)
+          echo "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE" > "$tmp/app.env"
+          docker run --rm -v "$tmp:/src:ro" hush:ci scan /src --model-off --output-json | tee out.json
+          grep -q AKIA out.json
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: gofmt
+        run: |
+          out=$(gofmt -s -l .)
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest

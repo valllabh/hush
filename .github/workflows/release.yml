@@ -1,0 +1,134 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  ORT_VERSION: "1.20.0"
+
+jobs:
+  build:
+    name: build ${{ matrix.target.os_arch }}
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { os_arch: linux_amd64,  runner: ubuntu-latest,    goos: linux,  goarch: amd64, ort_asset: onnxruntime-linux-x64,      ext: tgz, libglob: "libonnxruntime.so*" }
+          - { os_arch: linux_arm64,  runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64, ort_asset: onnxruntime-linux-aarch64,  ext: tgz, libglob: "libonnxruntime.so*" }
+          - { os_arch: darwin_amd64, runner: macos-13,         goos: darwin, goarch: amd64, ort_asset: onnxruntime-osx-x86_64,     ext: tgz, libglob: "libonnxruntime*.dylib" }
+          - { os_arch: darwin_arm64, runner: macos-latest,     goos: darwin, goarch: arm64, ort_asset: onnxruntime-osx-arm64,      ext: tgz, libglob: "libonnxruntime*.dylib" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Download ONNX Runtime (${{ matrix.target.os_arch }})
+        run: |
+          set -eux
+          url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${{ matrix.target.ort_asset }}-${ORT_VERSION}.${{ matrix.target.ext }}"
+          curl -sSL -o /tmp/ort.tgz "$url"
+          mkdir -p /tmp/ort
+          tar -xzf /tmp/ort.tgz -C /tmp/ort --strip-components=1
+
+      - name: Build hush
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_CFLAGS: "-I/tmp/ort/include"
+          CGO_LDFLAGS: "-L/tmp/ort/lib"
+          LD_LIBRARY_PATH: "/tmp/ort/lib"
+          DYLD_LIBRARY_PATH: "/tmp/ort/lib"
+        run: |
+          set -eux
+          VERSION=${GITHUB_REF_NAME#v}
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA}" \
+            -o dist/hush ./cmd/hush
+
+      - name: Package
+        run: |
+          set -eux
+          VERSION=${GITHUB_REF_NAME#v}
+          pkg="hush_${VERSION}_${{ matrix.target.os_arch }}"
+          mkdir -p "dist/$pkg/lib"
+          cp dist/hush "dist/$pkg/hush"
+          shopt -s nullglob
+          cp /tmp/ort/lib/${{ matrix.target.libglob }} "dist/$pkg/lib/"
+          cp README.md LICENSE CHANGELOG.md "dist/$pkg/"
+          cat > "dist/$pkg/INSTALL.md" <<EOF
+          # hush ${VERSION}
+
+          Extract this archive and put \`hush\` on your \$PATH. The \`lib/\`
+          directory ships the matching libonnxruntime. Point hush at it:
+
+              export ONNXRUNTIME_LIB=\$PWD/lib/$(basename $(ls dist/$pkg/lib | head -1))
+
+          Or copy the lib/ file into /usr/local/lib (Linux) or
+          /opt/homebrew/lib (macOS) so hush finds it automatically.
+          EOF
+          tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
+          ( cd dist && shasum -a 256 "$pkg.tar.gz" > "$pkg.tar.gz.sha256" )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hush-${{ matrix.target.os_arch }}
+          path: dist/hush_*.tar.gz*
+          retention-days: 7
+
+  release:
+    name: release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Combined SHA256SUMS
+        run: |
+          cd dist
+          ls -la
+          cat hush_*.tar.gz.sha256 > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign archives with cosign keyless
+        run: |
+          cd dist
+          for f in hush_*.tar.gz; do
+            cosign sign-blob --yes \
+              --output-certificate "$f.pem" \
+              --output-signature   "$f.sig" \
+              "$f"
+          done
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/hush_*.tar.gz"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/hush_*.tar.gz
+            dist/hush_*.tar.gz.sha256
+            dist/hush_*.tar.gz.sig
+            dist/hush_*.tar.gz.pem
+            dist/SHA256SUMS

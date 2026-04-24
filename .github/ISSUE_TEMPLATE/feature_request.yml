@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest a new capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    attributes: { label: Problem, description: "What are you trying to do that hush cannot do today?" }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Proposed solution }
+  - type: textarea
+    attributes: { label: Alternatives considered }
