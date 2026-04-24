@@ -7,18 +7,18 @@ import (
 
 // Layer holds all weights for one transformer block.
 type Layer struct {
-	QueryW, KeyW, ValueW *Tensor
+	QueryW, KeyW, ValueW *MaybeWeight
 	QueryB, KeyB, ValueB []float32
 
-	AttnOutW *Tensor
+	AttnOutW *MaybeWeight
 	AttnOutB []float32
 
 	Attn1LN_W, Attn1LN_B []float32 // attention output LayerNorm
 
-	InterW *Tensor // intermediate.dense [H, FFN]
+	InterW *MaybeWeight // intermediate.dense [H, FFN]
 	InterB []float32
 
-	OutputW *Tensor // output.dense [FFN, H]
+	OutputW *MaybeWeight // output.dense [FFN, H]
 	OutputB []float32
 
 	Out2LN_W, Out2LN_B []float32 // output LayerNorm
@@ -28,18 +28,22 @@ type Layer struct {
 type Model struct {
 	Meta Meta
 
-	WordEmb    *Tensor // [V, H]
-	PosEmb     *Tensor // [MaxPos, H]
-	TypeEmb    *Tensor // [1, H]
-	EmbLN_W    []float32
-	EmbLN_B    []float32
+	WordEmb *Tensor // [V, H]
+	PosEmb  *Tensor // [MaxPos, H]
+	TypeEmb *Tensor // [1, H]
+	EmbLN_W []float32
+	EmbLN_B []float32
 
 	Layers []Layer
 
-	ClsDenseW  *Tensor // [H, H]
-	ClsDenseB  []float32
-	ClsOutW    *Tensor // [num_classes, H]  (transformers stores this as [H, num_classes] after transpose)
-	ClsOutB    []float32
+	// Classifier dense + out_proj. Stored so that MatMul(a, W) produces
+	// the expected output: for fp32 this is the already-transposed [in, out]
+	// layout; for int8 the exporter pre-transposes so the stored weight is
+	// also [in, out].
+	ClsDenseW *MaybeWeight // [H, H]
+	ClsDenseB []float32
+	ClsOutW   *MaybeWeight // [H, num_classes]
+	ClsOutB   []float32
 }
 
 // LoadModel constructs a Model from an hbin Bundle. Every weight must be
@@ -68,6 +72,56 @@ func LoadModel(b *Bundle) (*Model, error) {
 		}
 		return FromSlice(t.Shape, t.F32), nil
 	}
+	// mmw loads a matmul weight that may be fp32 or int8 quantized.
+	// The stored layout is always [In, Out] matching MatMul(x, W).
+	mmw := func(name string) (*MaybeWeight, error) {
+		t, ok := b.Tensors[name]
+		if !ok {
+			return nil, fmt.Errorf("missing tensor: %s", name)
+		}
+		switch t.DType {
+		case DTypeF32:
+			return &MaybeWeight{F32: FromSlice(t.Shape, t.F32)}, nil
+		case DTypeI8:
+			s, ok := b.Tensors[name+".scale"]
+			if !ok {
+				return nil, fmt.Errorf("int8 weight %s missing scale", name)
+			}
+			if s.DType != DTypeF32 {
+				return nil, fmt.Errorf("%s.scale: expected f32", name)
+			}
+			if len(t.Shape) != 2 {
+				return nil, fmt.Errorf("%s: expected 2D int8, got %v", name, t.Shape)
+			}
+			in, out := t.Shape[0], t.Shape[1]
+			qw, err := NewQuantWeight(in, out, t.I8, s.F32)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", name, err)
+			}
+			return &MaybeWeight{I8: qw}, nil
+		default:
+			return nil, fmt.Errorf("%s: unsupported dtype %d for matmul weight", name, t.DType)
+		}
+	}
+	// mmwTransposed loads a matmul weight that, if stored as fp32, is in
+	// [out, in] layout (PyTorch convention) and needs a transpose before
+	// use. If stored as int8, the exporter already transposed it to
+	// [in, out], so we return as-is.
+	mmwTransposed := func(name string) (*MaybeWeight, error) {
+		t, ok := b.Tensors[name]
+		if !ok {
+			return nil, fmt.Errorf("missing tensor: %s", name)
+		}
+		switch t.DType {
+		case DTypeF32:
+			src := FromSlice(t.Shape, t.F32)
+			return &MaybeWeight{F32: Transpose(src, []int{1, 0})}, nil
+		case DTypeI8:
+			return mmw(name)
+		default:
+			return nil, fmt.Errorf("%s: unsupported dtype %d", name, t.DType)
+		}
+	}
 
 	var err error
 	if m.WordEmb, err = ten("m.roberta.embeddings.word_embeddings.weight"); err != nil {
@@ -90,13 +144,13 @@ func LoadModel(b *Bundle) (*Model, error) {
 	for i := 0; i < b.Meta.Layers; i++ {
 		p := fmt.Sprintf("m.roberta.encoder.layer.%d.", i)
 		L := &m.Layers[i]
-		if L.QueryW, err = ten(p + "attention.self.query.weight"); err != nil {
+		if L.QueryW, err = mmw(p + "attention.self.query.weight"); err != nil {
 			return nil, err
 		}
-		if L.KeyW, err = ten(p + "attention.self.key.weight"); err != nil {
+		if L.KeyW, err = mmw(p + "attention.self.key.weight"); err != nil {
 			return nil, err
 		}
-		if L.ValueW, err = ten(p + "attention.self.value.weight"); err != nil {
+		if L.ValueW, err = mmw(p + "attention.self.value.weight"); err != nil {
 			return nil, err
 		}
 		if L.QueryB, err = f32(p + "attention.self.query.bias"); err != nil {
@@ -109,7 +163,7 @@ func LoadModel(b *Bundle) (*Model, error) {
 			return nil, err
 		}
 
-		if L.AttnOutW, err = ten(p + "attention.output.dense.weight"); err != nil {
+		if L.AttnOutW, err = mmw(p + "attention.output.dense.weight"); err != nil {
 			return nil, err
 		}
 		if L.AttnOutB, err = f32(p + "attention.output.dense.bias"); err != nil {
@@ -122,13 +176,13 @@ func LoadModel(b *Bundle) (*Model, error) {
 			return nil, err
 		}
 
-		if L.InterW, err = ten(p + "intermediate.dense.weight"); err != nil {
+		if L.InterW, err = mmw(p + "intermediate.dense.weight"); err != nil {
 			return nil, err
 		}
 		if L.InterB, err = f32(p + "intermediate.dense.bias"); err != nil {
 			return nil, err
 		}
-		if L.OutputW, err = ten(p + "output.dense.weight"); err != nil {
+		if L.OutputW, err = mmw(p + "output.dense.weight"); err != nil {
 			return nil, err
 		}
 		if L.OutputB, err = f32(p + "output.dense.bias"); err != nil {
@@ -142,13 +196,15 @@ func LoadModel(b *Bundle) (*Model, error) {
 		}
 	}
 
-	if m.ClsDenseW, err = ten("m.classifier.dense.weight"); err != nil {
+	// Classifier: stored as [out, in] when fp32 (original PyTorch layout);
+	// the int8 exporter transposes to [in, out] before quantization.
+	if m.ClsDenseW, err = mmwTransposed("m.classifier.dense.weight"); err != nil {
 		return nil, err
 	}
 	if m.ClsDenseB, err = f32("m.classifier.dense.bias"); err != nil {
 		return nil, err
 	}
-	if m.ClsOutW, err = ten("m.classifier.out_proj.weight"); err != nil {
+	if m.ClsOutW, err = mmwTransposed("m.classifier.out_proj.weight"); err != nil {
 		return nil, err
 	}
 	if m.ClsOutB, err = f32("m.classifier.out_proj.bias"); err != nil {
@@ -231,19 +287,15 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 	copy(cls, x.Data[:H])
 	clsT := FromSlice([]int{1, H}, cls)
 
-	// classifier head uses Gemm with transB=1 in the original ONNX: both
-	// weights are stored in PyTorch layout [out, in] and need transposing
-	// before matmul. pkg/classifier previously dodged this by handling
-	// out_proj specially; we now do it consistently for both layers.
-	denseW := Transpose(m.ClsDenseW, []int{1, 0}) // [H, H] -> [H, H] (still H,H but logically Wᵀ)
-	h := MatMul(clsT, denseW)                     // [1, H]
+	// Dense [H, H] then tanh; both fp32 and int8 paths expose [in, out]
+	// layout via MaybeWeight.MatMul.
+	h := m.ClsDenseW.MatMul(clsT) // [1, H]
 	AddBias(h, m.ClsDenseB)
 	for i := range h.Data {
 		h.Data[i] = float32(math.Tanh(float64(h.Data[i])))
 	}
 
-	outW := Transpose(m.ClsOutW, []int{1, 0}) // [num_classes, H] -> [H, num_classes]
-	out := MatMul(h, outW)                    // [1, num_classes]
+	out := m.ClsOutW.MatMul(h) // [1, num_classes]
 	AddBias(out, m.ClsOutB)
 
 	return out.Data
@@ -262,11 +314,11 @@ func (m *Model) forwardLayer(x *Tensor, addMask []float32, L *Layer) *Tensor {
 
 	// Q/K/V projections. Our exporter kept W as [H, H] matching ONNX layout
 	// (MatMul(x, W)).
-	q := MatMul(x2d, L.QueryW)
+	q := L.QueryW.MatMul(x2d)
 	AddBias(q, L.QueryB)
-	k := MatMul(x2d, L.KeyW)
+	k := L.KeyW.MatMul(x2d)
 	AddBias(k, L.KeyB)
-	v := MatMul(x2d, L.ValueW)
+	v := L.ValueW.MatMul(x2d)
 	AddBias(v, L.ValueB)
 
 	// Reshape to [heads, T, d] by splitting last axis into [heads, d]
@@ -296,7 +348,7 @@ func (m *Model) forwardLayer(x *Tensor, addMask []float32, L *Layer) *Tensor {
 	ctx2d := Reshape(ctxT, T, H)
 
 	// attention output dense
-	out := MatMul(ctx2d, L.AttnOutW)
+	out := L.AttnOutW.MatMul(ctx2d)
 	AddBias(out, L.AttnOutB)
 
 	// residual + layernorm
@@ -304,12 +356,12 @@ func (m *Model) forwardLayer(x *Tensor, addMask []float32, L *Layer) *Tensor {
 	out = LayerNorm(out, L.Attn1LN_W, L.Attn1LN_B, 1e-5)
 
 	// FFN: intermediate (linear + GELU)
-	inter := MatMul(out, L.InterW)
+	inter := L.InterW.MatMul(out)
 	AddBias(inter, L.InterB)
 	inter = GELU(inter)
 
 	// output dense
-	ffnOut := MatMul(inter, L.OutputW)
+	ffnOut := L.OutputW.MatMul(inter)
 	AddBias(ffnOut, L.OutputB)
 
 	// residual + layernorm
