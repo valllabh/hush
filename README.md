@@ -5,9 +5,9 @@
 <h1 align="center">hush</h1>
 
 <p align="center">
-  <b>Secrets detection that knows what's really a secret.</b><br/>
-  A learned classifier in an 80MB binary. Catches real leaks, ignores the<br/>
-  noise other scanners flood you with. No GPU. No cloud. No config.
+  <b>Offline AI secrets detection.</b><br/>
+  An 80MB binary with a brain. Catches real leaks that regex scanners miss,<br/>
+  ignores the noise they flood you with. No GPU. No cloud. No config.
 </p>
 
 <p align="center">
