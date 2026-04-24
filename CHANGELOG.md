@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-24
+
+### Added
+- **Batch scoring API**. Library users can now score many candidates in
+  one call: `scanner.BatchScorer` interface, `SpanTriple` input type,
+  `(*native.Scorer).BatchScore`, `(*native.Model).ForwardBatch`. Default
+  `scanner.Scan` auto-dispatches when the scorer supports it.
+- Numerical gate `TestForwardBatchMatchesForward` — batch output matches
+  per-example Forward within 1e-3 at any batch size.
+
+### Commentary
+Benchmarks on M4 Pro show parity (~1.01×) vs looping Forward — the NEON
+kernel already saturates per-example at realistic T. Shipped anyway as
+infrastructure for: (a) CPUs with different overhead profiles where
+batching will pay off, (b) future goroutine-parallel forwarding across
+the batch dim, (c) consistent API for library consumers who want to
+hand hush a slice of candidates. No regression on single-candidate
+latency (within 1%).
+
 ## [0.1.5] - 2026-04-24
 
 ### Performance
