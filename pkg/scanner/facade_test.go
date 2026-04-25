@@ -22,8 +22,8 @@ func TestOptionsDefaults(t *testing.T) {
 	if got.EntropyThreshold != 4.0 {
 		t.Errorf("EntropyThreshold default = %v", got.EntropyThreshold)
 	}
-	if got.CtxChars != 64 {
-		t.Errorf("CtxChars default = %v", got.CtxChars)
+	if got.CtxChars != 256 {
+		t.Errorf("CtxChars default = %v, want 256 (CLI parity)", got.CtxChars)
 	}
 }
 

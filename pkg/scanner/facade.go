@@ -8,11 +8,11 @@ import (
 
 // Options configures a Scanner.
 //
-// Zero values are sensible defaults:
+// Zero values are sensible defaults — these match the CLI:
 //
 //	MinConfidence = 0.5    keep findings scoring >= 0.5
 //	EntropyThreshold = 4.0 shannon entropy floor for generic candidates
-//	CtxChars = 64          chars of left/right context passed to the scorer
+//	CtxChars = 256         chars of left/right context passed to the scorer
 //	ModelOff = false       classifier enabled; set true to skip ML filtering
 //	IntraOpThreads = 0     ORT default (one thread per CPU)
 type Options struct {
@@ -31,7 +31,7 @@ func (o Options) withDefaults() Options {
 		o.EntropyThreshold = 4.0
 	}
 	if o.CtxChars == 0 {
-		o.CtxChars = 64
+		o.CtxChars = 256
 	}
 	return o
 }
@@ -89,6 +89,34 @@ func (s *Scanner) ScanReader(r io.Reader) ([]Finding, error) {
 		return nil, err
 	}
 	return s.ScanString(b.String())
+}
+
+// BatchScore scores many candidate spans in a single transformer forward
+// pass when the underlying scorer supports it. Falls back to per-candidate
+// Score when it doesn't. Returns probabilities in input order.
+//
+// Useful when a caller already has a list of (left, span, right) triples
+// from their own extraction pipeline and wants to skip hush's regex stage.
+func (s *Scanner) BatchScore(triples []SpanTriple) ([]float64, error) {
+	if s.scorer == nil {
+		out := make([]float64, len(triples))
+		for i := range out {
+			out[i] = 1.0
+		}
+		return out, nil
+	}
+	if bs, ok := s.scorer.(BatchScorer); ok {
+		return bs.BatchScore(triples)
+	}
+	out := make([]float64, len(triples))
+	for i, t := range triples {
+		p, err := s.scorer.Score(t.Left, t.Span, t.Right)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = p
+	}
+	return out, nil
 }
 
 // Redact scans text and returns a masked copy with each finding replaced.

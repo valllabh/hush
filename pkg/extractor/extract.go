@@ -13,17 +13,22 @@ type Candidate struct {
 	LeftCtx    string  `json:"left_ctx"`
 	RightCtx   string  `json:"right_ctx"`
 	SourceRule string  `json:"rule"`
-	Start      int     `json:"start"`
-	End        int     `json:"end"`
-	Line       int     `json:"line"`
-	Column     int     `json:"column"`
-	Entropy    float64 `json:"entropy"`
+	// RuleType is "secret" or "pii"; downstream uses it to decide whether
+	// to apply the model. PII rules are precise enough that the secret
+	// classifier (trained on credentials, not PII) would over-suppress them.
+	RuleType string  `json:"rule_type,omitempty"`
+	Start    int     `json:"start"`
+	End      int     `json:"end"`
+	Line     int     `json:"line"`
+	Column   int     `json:"column"`
+	Entropy  float64 `json:"entropy"`
 }
 
 type rawSpan struct {
 	start, end int
 	value      string
 	rule       string
+	ruleType   string
 }
 
 func ruleSpans(text string) []rawSpan {
@@ -38,7 +43,11 @@ func ruleSpans(text string) []rawSpan {
 			if s < 0 || e < 0 || e > len(text) {
 				continue
 			}
-			out = append(out, rawSpan{s, e, text[s:e], r.Name})
+			rt := r.Type
+			if rt == "" {
+				rt = RuleTypeSecret
+			}
+			out = append(out, rawSpan{s, e, text[s:e], r.Name, rt})
 		}
 	}
 	return out
@@ -85,7 +94,9 @@ func Extract(text string, ctxChars int, entropyThreshold float64) []Candidate {
 	rawEntropy := FindHighEntropySpans(text, entropyThreshold)
 	entropySpans := make([]rawSpan, 0, len(rawEntropy))
 	for _, h := range rawEntropy {
-		entropySpans = append(entropySpans, rawSpan{h.Start, h.End, h.Span, "high_entropy"})
+		// high-entropy fallback is treated as secret-class — generic
+		// random-looking strings are usually credentials, not PII.
+		entropySpans = append(entropySpans, rawSpan{h.Start, h.End, h.Span, "high_entropy", RuleTypeSecret})
 	}
 	combined := dedupe(append(rawRules, entropySpans...))
 
@@ -108,6 +119,7 @@ func Extract(text string, ctxChars int, entropyThreshold float64) []Candidate {
 			LeftCtx:    left,
 			RightCtx:   right,
 			SourceRule: s.rule,
+			RuleType:   s.ruleType,
 			Start:      s.start,
 			End:        s.end,
 			Line:       line,

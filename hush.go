@@ -45,10 +45,12 @@ func New(opts Options) (*Scanner, error) {
 	return scanner.New(opts)
 }
 
-// Default returns a Scanner with sensible defaults (MinConfidence 0.9,
-// embedded model). Useful for one-shot scripts and examples.
+// Default returns a Scanner with the same defaults as the hush CLI:
+// MinConfidence 0.5, CtxChars 256, embedded model loaded. Useful for
+// one-shot scripts and examples that want CLI-equivalent behaviour out
+// of the box.
 func Default() (*Scanner, error) {
-	return New(Options{MinConfidence: 0.9})
+	return New(Options{})
 }
 
 // ensureScorerFactoryRegistered wires the embedded pure-Go classifier

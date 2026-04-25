@@ -223,8 +223,8 @@ func runScan(cmd *cobra.Command, paths []string) error {
 		sc = s
 	}
 
-	// Stdin mode.
-	if len(paths) == 0 {
+	// Stdin mode: triggered by no args, or by the conventional `-` path.
+	if len(paths) == 0 || (len(paths) == 1 && paths[0] == "-") {
 		return runStdin(mask, asJSON, outPath, threshold, entropy, ctx, placeholder, failEnd, sc)
 	}
 

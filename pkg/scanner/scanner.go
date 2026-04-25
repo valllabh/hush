@@ -43,18 +43,37 @@ type BatchScorer interface {
 }
 
 // Scan finds candidates, optionally filters with the model, returns findings.
+//
+// PII candidates (RuleType == "pii") bypass the model entirely: regex
+// precision is enough on those, and the current shipped classifier was
+// trained on credentials so it would over-suppress real PII findings
+// (emails, SSNs, credit cards). PII findings are reported with
+// confidence 1.0 from the regex match.
 func Scan(text string, threshold float64, entropyThreshold float64, ctxChars int, scorer Scorer) ([]Finding, error) {
 	cands := extractor.Extract(text, ctxChars, entropyThreshold)
 	if len(cands) == 0 {
 		return nil, nil
 	}
 
-	// Batched fast path: one transformer forward over all candidates.
+	// Partition candidates: PII bypasses the model, secrets go to it.
+	piiSet := make(map[int]bool, len(cands))
+	scoreCands := make([]extractor.Candidate, 0, len(cands))
+	scoreIdx := make([]int, 0, len(cands))
+	for i, c := range cands {
+		if c.RuleType == extractor.RuleTypePII {
+			piiSet[i] = true
+			continue
+		}
+		scoreCands = append(scoreCands, c)
+		scoreIdx = append(scoreIdx, i)
+	}
+
+	// Batched fast path for the secret subset.
 	var probs []float64
-	if scorer != nil {
+	if scorer != nil && len(scoreCands) > 0 {
 		if bs, ok := scorer.(BatchScorer); ok {
-			triples := make([]SpanTriple, len(cands))
-			for i, c := range cands {
+			triples := make([]SpanTriple, len(scoreCands))
+			for i, c := range scoreCands {
 				triples[i] = SpanTriple{Left: c.LeftCtx, Span: c.Span, Right: c.RightCtx}
 			}
 			ps, err := bs.BatchScore(triples)
@@ -66,13 +85,15 @@ func Scan(text string, threshold float64, entropyThreshold float64, ctxChars int
 	}
 
 	out := make([]Finding, 0, len(cands))
+	scoreSeq := 0
 	for i, c := range cands {
 		conf := 1.0
-		if scorer != nil {
+		if !piiSet[i] && scorer != nil {
 			var p float64
 			var err error
 			if probs != nil {
-				p = probs[i]
+				p = probs[scoreSeq]
+				scoreSeq++
 			} else {
 				p, err = scorer.Score(c.LeftCtx, c.Span, c.RightCtx)
 				if err != nil {
