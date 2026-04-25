@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-04-25
+
+### Fixed
+- **PII findings no longer dropped by the classifier.** The shipped
+  classifier was trained on credentials, so it scored real PII (emails,
+  SSNs, credit cards) below threshold and silently filtered them out.
+  Scanner now bypasses the model for PII rule candidates and reports
+  them with regex confidence (1.0). `--detect=pii` finally returns what
+  the regex actually matches.
+- **`hush scan -` now reads stdin** (conventional Unix). Previously
+  treated `-` as a path, scanned nothing, exited 0.
+- **`hush.Default()` matches CLI defaults**: MinConfidence 0.5,
+  CtxChars 256. Was 0.9 / 64 — too strict, caused confidence drift vs
+  CLI on the same input.
+- **`scanner.Options{}` zero-value CtxChars** bumped from 64 to 256 so
+  library callers using zero-value Options see CLI-equivalent scores.
+
+### Added
+- **`(*scanner.Scanner).BatchScore([]SpanTriple)`** — library callers
+  can batch-score without dropping into `pkg/native`. Falls back to
+  per-candidate Score when the underlying scorer doesn't support batching.
+
 ## [0.1.6] - 2026-04-24
 
 ### Added
