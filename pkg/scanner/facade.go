@@ -4,7 +4,27 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/valllabh/hush/pkg/extractor"
 )
+
+// DetectedSpan is the minimal shape a Detector returns. Mirrors
+// native.Span without importing pkg/native (that would form a cycle:
+// pkg/native already imports pkg/scanner).
+type DetectedSpan struct {
+	Start int
+	End   int
+	Type  string
+	Score float32
+}
+
+// Detector is the v2 NER pipeline contract. Any type that implements
+// Detect(text) -> []DetectedSpan satisfies it; pkg/native.Detector does
+// (via a thin adapter wrapped by callers). Kept minimal so pkg/scanner
+// stays independent of any concrete model runtime.
+type Detector interface {
+	Detect(text string) ([]DetectedSpan, error)
+}
 
 // Options configures a Scanner.
 //
@@ -21,6 +41,20 @@ type Options struct {
 	CtxChars         int
 	ModelOff         bool
 	IntraOpThreads   int
+
+	// DetectorPrefilter, when true, runs the regex+entropy extractor first
+	// in v2 NER mode and only invokes the detector on text regions
+	// containing candidates. Cuts cost on clean files from ~2.6s/4KB to
+	// near zero by skipping the model entirely when no regex/entropy hit
+	// fires. The detector still has final say over what the spans are.
+	// Has no effect when no detector is wired.
+	DetectorPrefilter bool
+
+	// UseDetector, when true, signals the higher-level hush package to
+	// auto-wire the embedded v2 NER detector. Implies ModelOff=true (the
+	// v1 sequence classifier is not loaded). pkg/scanner itself does not
+	// act on this field — see hush.New.
+	UseDetector bool
 }
 
 func (o Options) withDefaults() Options {
@@ -41,9 +75,17 @@ func (o Options) withDefaults() Options {
 // It owns the classifier lifecycle so callers do not have to wire one up
 // by hand. Safe for concurrent use.
 type Scanner struct {
-	opts   Options
-	scorer Scorer
-	closer func() error
+	opts     Options
+	scorer   Scorer
+	detector Detector
+	closer   func() error
+}
+
+// UseDetector switches the scanner to v2 NER mode. When set, the regex
+// extractor and Scorer are bypassed; the detector emits spans directly.
+// Pass nil to revert to the regex+scorer pipeline.
+func (s *Scanner) UseDetector(d Detector) {
+	s.detector = d
 }
 
 // New returns a ready to use Scanner. When ModelOff is false it loads the
@@ -77,9 +119,80 @@ func (s *Scanner) Close() error {
 }
 
 // ScanString scans a string, returning findings.
+//
+// When UseDetector has installed an NER detector (v2 path), the regex
+// extractor and Scorer are bypassed and the detector emits spans
+// directly. Otherwise the legacy regex + Scorer pipeline runs.
 func (s *Scanner) ScanString(text string) ([]Finding, error) {
+	if s.detector != nil {
+		if s.opts.DetectorPrefilter {
+			return scanWithDetectorPrefilter(text, s.detector, s.opts.MinConfidence, s.opts.EntropyThreshold)
+		}
+		return scanWithDetector(text, s.detector, s.opts.MinConfidence)
+	}
 	return Scan(text, s.opts.MinConfidence, s.opts.EntropyThreshold, s.opts.CtxChars, s.scorer)
 }
+
+// scanWithDetector runs an NER detector over text and maps Spans into
+// Findings using the same JSON shape as the regex pipeline.
+func scanWithDetector(text string, d Detector, minConfidence float64) ([]Finding, error) {
+	spans, err := d.Detect(text)
+	if err != nil {
+		return nil, err
+	}
+	if len(spans) == 0 {
+		return nil, nil
+	}
+	out := make([]Finding, 0, len(spans))
+	for _, sp := range spans {
+		conf := float64(sp.Score)
+		if conf < minConfidence {
+			continue
+		}
+		start, end := sp.Start, sp.End
+		if start < 0 {
+			start = 0
+		}
+		if end > len(text) {
+			end = len(text)
+		}
+		if end < start {
+			end = start
+		}
+		raw := text[start:end]
+		// Compute line/column for the start offset.
+		line, col := lineColumn(text, start)
+		out = append(out, Finding{
+			Line:       line,
+			Column:     col,
+			Rule:       sp.Type,
+			Span:       raw,
+			Redacted:   extractor.Redact(raw),
+			Start:      start,
+			End:        end,
+			Confidence: conf,
+		})
+	}
+	return out, nil
+}
+
+// lineColumn returns the 1-based line and column for the given byte offset.
+func lineColumn(text string, off int) (int, int) {
+	if off > len(text) {
+		off = len(text)
+	}
+	line, col := 1, 1
+	for i := 0; i < off; i++ {
+		if text[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return line, col
+}
+
 
 // ScanReader reads the whole stream then scans. Suitable for small-to-medium
 // inputs (typical files). For true streaming use ScanString in chunks.

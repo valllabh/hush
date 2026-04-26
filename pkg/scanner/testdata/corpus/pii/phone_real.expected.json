@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 11,
+      "end": 23,
+      "type": "pii",
+      "label": "US phone"
+    }
+  ]
+}

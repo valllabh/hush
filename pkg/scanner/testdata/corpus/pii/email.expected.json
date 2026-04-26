@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 6,
+      "end": 29,
+      "type": "pii",
+      "label": "email"
+    }
+  ]
+}

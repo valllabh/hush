@@ -44,6 +44,10 @@ type Model struct {
 	ClsDenseB []float32
 	ClsOutW   *MaybeWeight // [H, num_classes]
 	ClsOutB   []float32
+
+	// Token classification head (v2). Loaded only when Meta.Task == "token_classification".
+	ClassifierW *MaybeWeight // [H, num_labels]
+	ClassifierB []float32    // [num_labels]
 }
 
 // LoadModel constructs a Model from an hbin Bundle. Every weight must be
@@ -251,27 +255,48 @@ func LoadModel(b *Bundle) (*Model, error) {
 		}
 	}
 
-	// Classifier: stored as [out, in] when fp32 (original PyTorch layout);
-	// the int8 exporter transposes to [in, out] before quantization.
-	if m.ClsDenseW, err = mmwTransposed("m.classifier.dense.weight"); err != nil {
-		return nil, err
-	}
-	if m.ClsDenseB, err = f32("m.classifier.dense.bias"); err != nil {
-		return nil, err
-	}
-	if m.ClsOutW, err = mmwTransposed("m.classifier.out_proj.weight"); err != nil {
-		return nil, err
-	}
-	if m.ClsOutB, err = f32("m.classifier.out_proj.bias"); err != nil {
-		return nil, err
+	if b.Meta.IsTokenClassification() {
+		// Token classification head: m.classifier is a single Linear [H, num_labels].
+		// Unlike the v1 heads, the v2 classifier is exported via ONNX MatMul
+		// (not Gemm) so the fp32 weight is already in [in, out] layout
+		// (no transpose needed). The int8 path uses the same convention.
+		if m.ClassifierW, err = mmw("m.classifier.weight"); err != nil {
+			return nil, err
+		}
+		if m.ClassifierB, err = f32("m.classifier.bias"); err != nil {
+			return nil, err
+		}
+	} else {
+		// Sequence classification (v1): dense + tanh + out_proj.
+		// Stored as [out, in] when fp32 (original PyTorch layout); the int8
+		// exporter transposes to [in, out] before quantization.
+		if m.ClsDenseW, err = mmwTransposed("m.classifier.dense.weight"); err != nil {
+			return nil, err
+		}
+		if m.ClsDenseB, err = f32("m.classifier.dense.bias"); err != nil {
+			return nil, err
+		}
+		if m.ClsOutW, err = mmwTransposed("m.classifier.out_proj.weight"); err != nil {
+			return nil, err
+		}
+		if m.ClsOutB, err = f32("m.classifier.out_proj.bias"); err != nil {
+			return nil, err
+		}
 	}
 
 	return m, nil
 }
 
 // Forward runs a classifier forward pass for a single example.
-// inputIDs and attentionMask are [seqLen]. Returns logits of length
-// OutputClasses.
+// inputIDs and attentionMask are [seqLen].
+//
+// Return contract depends on Meta.Task:
+//   - v1 sequence classification (default / empty Task): returns logits of
+//     length OutputClasses ([num_classes]).
+//   - v2 token classification (Task == "token_classification"): returns
+//     row-major logits of length T*num_labels, where T is the effective
+//     (post pad-trim) sequence length. Caller must consult Meta.Task and
+//     Meta.Labels to interpret the slice.
 //
 // The runtime trims trailing padding tokens before running. Transformers
 // with masked attention are length invariant, so this does not change the
@@ -290,6 +315,9 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 	}
 	if T == 0 {
 		// Degenerate input; return zero logits rather than panicking.
+		if m.Meta.IsTokenClassification() {
+			return nil
+		}
 		return make([]float32, m.Meta.OutputClasses)
 	}
 	if T < len(inputIDs) {
@@ -339,7 +367,16 @@ func (m *Model) Forward(inputIDs, attentionMask []int32) []float32 {
 		x = m.forwardLayer(ar, x, addMask, &m.Layers[li])
 	}
 
-	// --- classifier head: take CLS (index 0) ---
+	// --- v2 token classification head ---
+	if m.Meta.IsTokenClassification() {
+		// View x [1, T, H] as [T, H]. Run head: logits = x @ ClassifierW + b.
+		x2d := FromSlice([]int{T, H}, x.Data[:T*H])
+		logits := m.ClassifierW.MatMul(x2d) // [T, num_labels]
+		AddBias(logits, m.ClassifierB)
+		return logits.Data
+	}
+
+	// --- v1 classifier head: take CLS (index 0) ---
 	cls := make([]float32, H)
 	copy(cls, x.Data[:H])
 	clsT := FromSlice([]int{1, H}, cls)
@@ -445,10 +482,15 @@ func applyAdditiveMaskBatch(x *Tensor, mask []float32, B, heads, T int) {
 
 // ForwardBatch runs the classifier over B examples in a single pass.
 // inputIDs and attentionMask are both length B*seqLen, each example
-// occupying a contiguous row. Returns a slice of length B, each entry
-// holding OutputClasses logits. Matches looping Forward numerically to
-// within fp32 reassociation drift. Dynamic T trim is per-batch (max
-// effective length).
+// occupying a contiguous row. Returns a slice of length B.
+//
+// Per-example return contract mirrors Forward:
+//   - v1 sequence classification: each entry holds OutputClasses logits.
+//   - v2 token classification: each entry holds T*num_labels row-major
+//     logits, where T is the (shared, per-batch) effective sequence length.
+//
+// Matches looping Forward numerically to within fp32 reassociation drift.
+// Dynamic T trim is per-batch (max effective length).
 func (m *Model) ForwardBatch(inputIDs, attentionMask []int32, B int) [][]float32 {
 	if B <= 0 {
 		return nil
@@ -477,6 +519,10 @@ func (m *Model) ForwardBatch(inputIDs, attentionMask []int32, B int) [][]float32
 	}
 	if T == 0 {
 		out := make([][]float32, B)
+		if m.Meta.IsTokenClassification() {
+			// No tokens to classify; per-example slices are empty.
+			return out
+		}
 		for b := 0; b < B; b++ {
 			out[b] = make([]float32, m.Meta.OutputClasses)
 		}
@@ -523,6 +569,20 @@ func (m *Model) ForwardBatch(inputIDs, attentionMask []int32, B int) [][]float32
 
 	for li := 0; li < m.Meta.Layers; li++ {
 		x = m.forwardLayerBatch(ar, x, addMask, &m.Layers[li], B, T, heads, d)
+	}
+
+	// --- v2 token classification head: per-example [T, H] -> [T, num_labels] ---
+	if m.Meta.IsTokenClassification() {
+		res := make([][]float32, B)
+		for b := 0; b < B; b++ {
+			x2d := FromSlice([]int{T, H}, x.Data[b*T*H:(b+1)*T*H])
+			logits := m.ClassifierW.MatMul(x2d) // [T, num_labels]
+			AddBias(logits, m.ClassifierB)
+			r := make([]float32, len(logits.Data))
+			copy(r, logits.Data)
+			res[b] = r
+		}
+		return res
 	}
 
 	cls := make([]float32, B*H)

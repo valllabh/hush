@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 22,
+      "end": 33,
+      "type": "pii",
+      "label": "US SSN"
+    }
+  ]
+}

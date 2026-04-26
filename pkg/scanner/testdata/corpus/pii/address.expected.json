@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 9,
+      "end": 56,
+      "type": "pii",
+      "label": "postal address; v1 won't catch; v2 may"
+    }
+  ]
+}

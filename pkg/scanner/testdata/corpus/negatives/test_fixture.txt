@@ -1,0 +1,3 @@
+# test fixture
+fake_key = "AKIAIOSFODNN7EXAMPLE"  # test only
+assert validate(fake_key) is False

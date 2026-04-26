@@ -1,0 +1,5 @@
+aws:
+  access_key: AKIAIOSFODNN7EXAMPLE
+  region: us-east-1
+contact:
+  email: ops-team@example.com

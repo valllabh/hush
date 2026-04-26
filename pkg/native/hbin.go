@@ -34,6 +34,24 @@ type Meta struct {
 	PaddingIdx     int    `json:"padding_idx"`
 	SeqLen         int    `json:"seq_len"`
 	OutputClasses  int    `json:"output_classes"`
+	Task           string `json:"task,omitempty"`
+	Labels         *Labels `json:"labels,omitempty"`
+}
+
+// Labels carries token classification label metadata when Task ==
+// "token_classification". It is omitted for sequence classification models.
+type Labels struct {
+	Id2Label  map[string]string `json:"id2label"`
+	Label2Id  map[string]int    `json:"label2id"`
+	NumLabels int               `json:"num_labels"`
+	SeqLen    int               `json:"seq_len"`
+}
+
+// IsTokenClassification reports whether this meta describes a token
+// classification (NER) model. Empty Task defaults to sequence classification
+// for backward compatibility with v1 hbin files.
+func (m *Meta) IsTokenClassification() bool {
+	return m.Task == "token_classification"
 }
 
 // RawTensor is a weight tensor read straight from the hbin file.

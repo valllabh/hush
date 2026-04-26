@@ -1,3 +1,5 @@
 harmless text here
 AWS_KEY = AKIAIOSFODNN7EXAMPLE
+contact: vallabh.joshi@gmail.com
+phone: 415-555-2671
 more text

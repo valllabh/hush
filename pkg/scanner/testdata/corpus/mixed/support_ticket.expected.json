@@ -1,0 +1,28 @@
+{
+  "spans": [
+    {
+      "start": 12,
+      "end": 25,
+      "type": "pii",
+      "label": "name"
+    },
+    {
+      "start": 39,
+      "end": 51,
+      "type": "pii",
+      "label": "phone"
+    },
+    {
+      "start": 68,
+      "end": 82,
+      "type": "pii",
+      "label": "email"
+    },
+    {
+      "start": 104,
+      "end": 146,
+      "type": "secret",
+      "label": "GitHub PAT"
+    }
+  ]
+}

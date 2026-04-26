@@ -1,0 +1,16 @@
+{
+  "spans": [
+    {
+      "start": 19,
+      "end": 39,
+      "type": "secret",
+      "label": "AWS key"
+    },
+    {
+      "start": 78,
+      "end": 98,
+      "type": "pii",
+      "label": "email"
+    }
+  ]
+}

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-26
+
+### Added
+- **`hush detect` subcommand**: end-to-end NER pipeline (secrets and PII)
+  using a new token-classification model embedded in the binary. Auto
+  detects v2 vs v1 from the embedded asset. `--no-prefilter` opt-out
+  for max-recall mode. `--model`/`--tokenizer` for a custom v2 hbin.
+- **One-line v2 entry point** in the public `hush` package:
+  `hush.New(hush.Options{UseDetector: true, DetectorPrefilter: true})`.
+  No adapter, no `pkg/native` import required.
+- **Hybrid regex + model fusion** for v2: regex finds candidates, model
+  decides class and drops illustrative examples (READMEs, test
+  fixtures). Catches everything regex catches plus contextual cases
+  regex cannot describe (names in prose, custom internal tokens).
+- **Regex+entropy prefilter** in front of the v2 model: clean files
+  skip the model entirely. Bench: 4 KB clean doc 5.1s -> 5ms (1000x).
+- **Embedded v2 model**: `hush-model-v2.int8.hbin` (79 MB, 7-class BIO
+  over secret/pii/noise). v1 asset stays embedded for backward compat.
+- **Labeled corpus** at `pkg/scanner/testdata/corpus/` with 22 files
+  (secrets, PII, README examples, test fixtures, mixed) and a build
+  gate at `TestCorpus_V1_vs_V2` enforcing v2 thresholds:
+  secret P>=0.85 R>=0.80, pii P>=0.80 R>=0.70.
+
+### Quality
+Measured on the labeled corpus:
+
+| Class   | v1 P/R       | v2 P/R       |
+| ------- | ------------ | ------------ |
+| secret  | 0.75 / 1.00  | 0.90 / 1.00  |
+| pii     | 0.875 / 0.64 | 0.90 / 0.75  |
+
+v2 strictly dominates v1 (more recall on PII, higher precision on both).
+
+### Changed
+- `examples/lib-basic` now demonstrates the v2 path.
+- `examples/precommit` uses `hush detect`.
+
 ## [0.1.7] - 2026-04-25
 
 ### Fixed

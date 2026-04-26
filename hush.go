@@ -1,16 +1,21 @@
 // Package hush is the public, ergonomic entry point for hush.
 //
-// Most library users should need only this package:
+// Most library users should need only this package.
+//
+// V2 detector (recommended; catches secrets and PII):
 //
 //	import "github.com/valllabh/hush"
 //
-//	s, err := hush.New(hush.Options{MinConfidence: 0.9})
+//	s, err := hush.New(hush.Options{UseDetector: true, DetectorPrefilter: true})
 //	if err != nil { panic(err) }
 //	defer s.Close()
 //
 //	findings, _ := s.ScanReader(reader)
 //	masked, _, _ := s.Redact(text, "[REDACTED:%s]")
-//	fmt.Println(hush.ModelVersion)
+//
+// V1 sequence classifier (legacy, secrets only, faster on huge dirty input):
+//
+//	s, err := hush.New(hush.Options{MinConfidence: 0.9})
 //
 // The default build uses the pure Go runtime from pkg/native — no CGO,
 // no libonnxruntime, truly static. Advanced users who want to drive the
@@ -36,25 +41,68 @@ type (
 // you can correlate findings with a specific model.
 const ModelVersion = native.ModelVersion
 
-// New returns a Scanner ready to use. By default it loads the embedded
-// BitNet classifier via the pure Go runtime. Set Options.ModelOff to
-// skip the model and run the extractor only (faster, more false
-// positives, zero classifier cost).
+// New returns a Scanner ready to use.
+//
+//   - Options.UseDetector=true:    embedded v2 NER detector (secrets + PII).
+//     ModelOff is forced true; v1 classifier is not loaded.
+//   - Options.UseDetector=false:   embedded v1 sequence classifier (secrets).
+//     This is the legacy path; ModelOff=true skips the model and runs the
+//     extractor only.
+//
+// DetectorPrefilter only affects the v2 path. It enables a regex+entropy
+// gate in front of the model so files with no candidates skip the model
+// entirely. Strongly recommended (1000x faster on clean files; quality
+// is preserved or improved by a hybrid regex+model fusion).
 func New(opts Options) (*Scanner, error) {
+	if opts.UseDetector {
+		opts.ModelOff = true
+		s, err := scanner.New(opts)
+		if err != nil {
+			return nil, err
+		}
+		det, err := native.NewBundledDetector()
+		if err != nil {
+			_ = s.Close()
+			return nil, err
+		}
+		s.UseDetector(detectorAdapter{d: det})
+		return s, nil
+	}
+
 	ensureScorerFactoryRegistered()
 	return scanner.New(opts)
 }
 
-// Default returns a Scanner with the same defaults as the hush CLI:
-// MinConfidence 0.5, CtxChars 256, embedded model loaded. Useful for
-// one-shot scripts and examples that want CLI-equivalent behaviour out
-// of the box.
+// Default returns a Scanner with the v2 detector + prefilter enabled.
+// Mirrors `hush detect` defaults. Useful for one-shot scripts and
+// examples that want sensible behaviour out of the box.
 func Default() (*Scanner, error) {
-	return New(Options{})
+	return New(Options{
+		UseDetector:       true,
+		DetectorPrefilter: true,
+		MinConfidence:     0.5,
+		EntropyThreshold:  3.0,
+	})
 }
 
-// ensureScorerFactoryRegistered wires the embedded pure-Go classifier
-// into pkg/scanner the first time hush.New is called.
+// detectorAdapter bridges *native.Detector to scanner.Detector so
+// pkg/scanner stays decoupled from pkg/native.
+type detectorAdapter struct{ d *native.Detector }
+
+func (a detectorAdapter) Detect(text string) ([]scanner.DetectedSpan, error) {
+	spans, err := a.d.Detect(text)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]scanner.DetectedSpan, len(spans))
+	for i, s := range spans {
+		out[i] = scanner.DetectedSpan{Start: s.Start, End: s.End, Type: s.Type, Score: s.Score}
+	}
+	return out, nil
+}
+
+// ensureScorerFactoryRegistered wires the embedded pure-Go v1 classifier
+// into pkg/scanner the first time hush.New is called without UseDetector.
 func ensureScorerFactoryRegistered() {
 	if scanner.DefaultScorerFactory != nil {
 		return

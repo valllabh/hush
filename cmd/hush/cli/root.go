@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const Version = "0.3.0"
+const Version = "0.1.8"
 
 // configFile is set by --config / $HUSH_CONFIG; loaded lazily.
 var configFile string
@@ -98,7 +98,7 @@ Examples
 	// Namespaced flag set plus hidden legacy aliases.
 	addAllFlags(cmd.Flags())
 
-	cmd.AddCommand(NewScanCmd(), NewVersionCmd(), NewRulesCmd())
+	cmd.AddCommand(NewScanCmd(), NewVersionCmd(), NewRulesCmd(), NewDetectCmd())
 
 	cobra.OnInitialize(initViper)
 	return cmd

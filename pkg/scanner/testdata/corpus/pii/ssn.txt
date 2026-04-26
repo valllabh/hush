@@ -1,0 +1,1 @@
+Employee record: SSN: 123-45-6789, hire date 2018-03-12.

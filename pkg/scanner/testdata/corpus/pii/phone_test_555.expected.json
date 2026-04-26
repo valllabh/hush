@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 13,
+      "end": 25,
+      "type": "pii",
+      "label": "test phone; v1's phone_us regex requires NPA != 5xx area code -> won't match; observe v2"
+    }
+  ]
+}

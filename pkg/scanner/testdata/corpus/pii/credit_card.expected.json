@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 14,
+      "end": 30,
+      "type": "pii",
+      "label": "Visa credit card"
+    }
+  ]
+}

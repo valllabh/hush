@@ -1,0 +1,10 @@
+{
+  "spans": [
+    {
+      "start": 25,
+      "end": 38,
+      "type": "pii",
+      "label": "person name; v1 has no rule; v2 NER should catch"
+    }
+  ]
+}
