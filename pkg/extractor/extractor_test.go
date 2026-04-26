@@ -1,7 +1,6 @@
 package extractor
 
 import (
-	"math"
 	"strings"
 	"testing"
 )
@@ -115,14 +114,6 @@ func TestCommitHashEntropyBelowThreshold(t *testing.T) {
 		if c.SourceRule == "high_entropy" && strings.Contains(c.Span, "4f3a8b2c") {
 			t.Errorf("commit sha shouldn't trip entropy at threshold 4.2: %+v", c)
 		}
-	}
-}
-
-// assertClose lets us keep entropy asserts tidy.
-func assertClose(t *testing.T, got, want, tol float64) {
-	t.Helper()
-	if math.Abs(got-want) > tol {
-		t.Errorf("got %v, want %v (±%v)", got, want, tol)
 	}
 }
 

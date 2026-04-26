@@ -1,0 +1,30 @@
+version: "2"
+
+# Linters we trust to flag real bugs. QF* (quickfix style suggestions
+# from staticcheck) are excluded — they propose stylistic rewrites,
+# not correctness fixes, and noise up CI without changing behavior.
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  exclusions:
+    rules:
+      # Idiomatic: tests routinely call Close() in defer without
+      # checking the return. Production code must.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -QF1001 # De Morgan rewrite — stylistic
+        - -QF1003 # tagged switch rewrite — stylistic
+        - -QF1011 # explicit type omission — stylistic
+        - -QF1012 # fmt.Fprintf vs WriteString+Sprintf — stylistic

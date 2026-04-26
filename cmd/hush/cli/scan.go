@@ -367,11 +367,6 @@ func runStdin(mask, asJSON bool, outPath string, threshold, entropy float64,
 // os.ReadFile + Scan path to a chunked ScanReader. Mirrors plan #12.
 const largeFileBytes = 50 * 1024 * 1024
 
-// maxModelInvocationsPerFile caps detector calls per file in the chunked
-// path so a single 10 GB log cannot pin a worker indefinitely. Mirrors
-// plan #12 (200 windows ~= 200 forward passes ~= a few seconds).
-const maxModelInvocationsPerFile = 200
-
 // scanFilePath chooses the right scan strategy based on file size:
 // small files go through Scan (simple), large files stream via the
 // chunked ScanReader so peak RSS stays bounded.

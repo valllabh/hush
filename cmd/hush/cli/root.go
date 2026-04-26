@@ -168,10 +168,6 @@ func (e *ExitError) Error() string { return fmt.Sprintf("exit %d", e.Code) }
 
 // -- small helpers used by scan.go to read viper+flag merged values ----
 
-func bindFlag(cmd *cobra.Command, name string) {
-	_ = viper.BindPFlag(name, cmd.Flags().Lookup(name))
-}
-
 // configPath returns a sensible label for messages.
 func configPath() string {
 	p := viper.ConfigFileUsed()

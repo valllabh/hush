@@ -155,14 +155,12 @@ func Scan(text string, threshold float64, entropyThreshold float64, ctxChars int
 	// Partition candidates: PII bypasses the model, secrets go to it.
 	piiSet := make(map[int]bool, len(cands))
 	scoreCands := make([]extractor.Candidate, 0, len(cands))
-	scoreIdx := make([]int, 0, len(cands))
 	for i, c := range cands {
 		if c.RuleType == extractor.RuleTypePII {
 			piiSet[i] = true
 			continue
 		}
 		scoreCands = append(scoreCands, c)
-		scoreIdx = append(scoreIdx, i)
 	}
 
 	// Batched fast path for the secret subset.
