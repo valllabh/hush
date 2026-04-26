@@ -26,7 +26,7 @@ func TestConfigPrecedence_FlagBeatsEnv(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit %d stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "AKIA") {
+	if !strings.Contains(stdout, "aws_access_key_id") {
 		t.Errorf("expected finding, got:\n%s", stdout)
 	}
 }

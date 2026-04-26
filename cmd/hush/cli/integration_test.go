@@ -92,7 +92,7 @@ func TestIntegration_DirtyRepoDetectsSecret(t *testing.T) {
 		// Without --fail-end a dirty scan still exits 0 (findings-only in stdout).
 		t.Errorf("expected exit 0 without --fail-end, got %d; stderr=%s", code, stderr)
 	}
-	if !strings.Contains(stdout, "AKIA") && !strings.Contains(stdout, "aws_") {
+	if !strings.Contains(stdout, "aws_") {
 		t.Errorf("expected a finding in output, got:\n%s", stdout)
 	}
 }
@@ -152,7 +152,7 @@ func TestIntegration_RulesJSONRoundTrip(t *testing.T) {
 	if code != 0 {
 		t.Errorf("rule-file load failed: stderr=%s", stderr)
 	}
-	if !strings.Contains(stdout, "AKIA") && !strings.Contains(stdout, "aws_") {
+	if !strings.Contains(stdout, "aws_") {
 		t.Errorf("rule-file scan missed planted secret: %s", stdout)
 	}
 }

@@ -348,7 +348,11 @@ func runStdin(mask, asJSON bool, outPath string, threshold, entropy float64,
 	} else if asJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(findings)
+		toEmit := findings
+		if !viper.GetBool("output-reveal-secrets") {
+			toEmit = scanner.SafeForOutput(findings)
+		}
+		_ = enc.Encode(toEmit)
 	}
 	if failEnd && len(findings) > 0 {
 		return &ExitError{Code: 2}
@@ -430,8 +434,12 @@ func runMulti(roots []string, opts walker.Options, workers int, asJSON bool,
 					triggerAbort()
 				}
 				if asJSON {
+					reveal := viper.GetBool("output-reveal-secrets")
 					outMu.Lock()
 					for _, f := range findings {
+						if !reveal {
+							f.Span = ""
+						}
 						_ = enc.Encode(f)
 					}
 					outMu.Unlock()

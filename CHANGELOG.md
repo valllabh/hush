@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-26
+
+### Security
+- **Raw secret value (`span` field) is no longer in CLI output by
+  default.** Previous releases emitted the raw secret in NDJSON, which
+  meant any pipeline that piped findings to logs, dashboards, or CI
+  artifacts was itself a leak — worse than not running hush at all.
+  CLI now emits only `redacted` (first 3 + stars + last 3). Opt back
+  in with `--output-reveal-secrets` for key-rotation pipelines that
+  genuinely need the raw value, and only when the sink is private.
+- **Library callers**: `Finding.Span` still holds the raw value for
+  programmatic use (rotation, revocation). Use the new
+  `scanner.SafeForOutput(findings)` helper before serializing to any
+  external sink. Doc on `Finding` flags this explicitly.
+
 ## [0.1.8] - 2026-04-26
 
 ### Added

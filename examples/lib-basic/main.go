@@ -30,6 +30,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "scan:", err)
 		os.Exit(2)
 	}
+	// Print only the redacted preview, never f.Span (the raw value).
+	// f.Span is available for programmatic use (e.g., key rotation) but
+	// must never reach logs, dashboards, or other external sinks.
 	for _, f := range findings {
 		fmt.Printf("line %d col %d  %-7s  %s  confidence=%.2f\n",
 			f.Line, f.Column, f.Rule, f.Redacted, f.Confidence)

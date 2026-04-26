@@ -7,7 +7,14 @@ import (
 	"github.com/valllabh/hush/pkg/extractor"
 )
 
-// Finding is the output unit: one detected secret.
+// Finding is the output unit: one detected secret or PII span.
+//
+// SECURITY NOTE: Span holds the raw secret/PII value. Library callers
+// who serialize findings to logs, dashboards, CI artifacts, telemetry,
+// or any external sink should ALWAYS pass through SafeForOutput first
+// (or set Span = "" manually). Otherwise hush leaks the very thing it
+// was supposed to find. The hush CLI emits findings without Span by
+// default; --output-reveal-secrets opts back in.
 type Finding struct {
 	File       string  `json:"file,omitempty"`
 	Line       int     `json:"line"`
@@ -19,6 +26,19 @@ type Finding struct {
 	End        int     `json:"end"`
 	Entropy    float64 `json:"entropy"`
 	Confidence float64 `json:"confidence,omitempty"`
+}
+
+// SafeForOutput returns a copy of the findings with Span cleared, so the
+// raw secret/PII value never leaks via JSON serialization. Use this
+// before writing findings to any external sink. Pass-through equivalent
+// to setting f.Span = "" on each item.
+func SafeForOutput(findings []Finding) []Finding {
+	out := make([]Finding, len(findings))
+	for i, f := range findings {
+		f.Span = ""
+		out[i] = f
+	}
+	return out
 }
 
 // Scorer returns a probability [0,1] that a candidate is a real secret.

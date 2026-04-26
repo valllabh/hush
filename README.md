@@ -61,10 +61,12 @@ Reports each secret or personal data item it sees. One JSON object per line. Dro
 
 ```
 $ hush detect path/to/file.txt
-{"file":"path/to/file.txt","line":2,"column":11,"rule":"secret","span":"AKIAIOSFODNN7EXAMPLE","redacted":"AKI**************PLE","start":29,"end":49,"confidence":1.00}
-{"file":"path/to/file.txt","line":3,"column":10,"rule":"pii","span":"vallabh.joshi@gmail.com","redacted":"val*****************com","start":59,"end":82,"confidence":1.00}
-{"file":"path/to/file.txt","line":4,"column":8,"rule":"pii","span":"415-555-2671","redacted":"415******671","start":90,"end":102,"confidence":1.00}
+{"file":"path/to/file.txt","line":2,"column":11,"rule":"secret","redacted":"AKI**************PLE","start":29,"end":49,"confidence":1.00}
+{"file":"path/to/file.txt","line":3,"column":10,"rule":"pii","redacted":"val*****************com","start":59,"end":82,"confidence":1.00}
+{"file":"path/to/file.txt","line":4,"column":8,"rule":"pii","redacted":"415******671","start":90,"end":102,"confidence":1.00}
 ```
+
+By default the raw secret value is **not** printed. Only the redacted preview ships in the output. This is on purpose: a finding pipeline that prints raw secrets to logs, dashboards, or CI artifacts is itself a leak. Pass `--output-reveal-secrets` if you really need the raw value (key rotation pipelines, automated revocation), and only when the output sink is private.
 
 Each line tells you:
 
@@ -73,7 +75,6 @@ Each line tells you:
 | file       | which file it came from                             |
 | line, column | where in the file                                 |
 | rule       | `secret` or `pii`                                   |
-| span       | the actual text that was found                      |
 | redacted   | a safe-to-log preview (first 3 + stars + last 3)    |
 | start, end | byte offsets into the file                          |
 | confidence | 0 to 1 (1 means the regex matched; lower means the AI is less sure) |

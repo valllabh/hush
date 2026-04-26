@@ -56,6 +56,7 @@ func addAllFlags(f *pflag.FlagSet) {
 	f.BoolP("output-json", "j", false, "Output findings as NDJSON (default)")
 	f.StringP("output-file", "o", "", "Redirect output to file")
 	f.StringP("output-placeholder", "p", "", "Fixed placeholder (default: [REDACTED_<RULE>_<N>])")
+	f.Bool("output-reveal-secrets", false, "DANGEROUS: include the raw secret/PII value (`span` field) in JSON output. Default is to emit only the redacted preview.")
 
 	// --- Failure: fail-* ---
 	f.BoolP("fail-end", "f", false, "Exit 2 at end if any finding (scan completes)")

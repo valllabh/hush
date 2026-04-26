@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	// Blank import wires scanner.DefaultScorerFactory to the embedded
 	// classifier so the v1 fallback path can score candidates.
@@ -55,6 +56,8 @@ func NewDetectCmd() *cobra.Command {
 	cmd.Flags().StringVar(&modelPath, "model", "", "Path to a v2 token-classification .hbin (default: use embedded v1 fallback)")
 	cmd.Flags().StringVar(&tokPath, "tokenizer", "", "Path to tokenizer.json paired with --model")
 	cmd.Flags().BoolVar(&noPrefilter, "no-prefilter", false, "Disable regex+entropy prefilter and run the model on every window (slower, max recall)")
+	cmd.Flags().Bool("output-reveal-secrets", false, "DANGEROUS: include the raw secret/PII value (`span` field) in JSON output. Default emits only the redacted preview.")
+	_ = viper.BindPFlag("output-reveal-secrets", cmd.Flags().Lookup("output-reveal-secrets"))
 	return cmd
 }
 
@@ -125,7 +128,15 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 	defer s.Close()
 
 	enc := json.NewEncoder(os.Stdout)
+	reveal := viper.GetBool("output-reveal-secrets")
 	total := 0
+
+	emit := func(f scanner.Finding) {
+		if !reveal {
+			f.Span = ""
+		}
+		_ = enc.Encode(f)
+	}
 
 	if len(paths) == 0 {
 		b, rerr := io.ReadAll(os.Stdin)
@@ -138,7 +149,7 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 		}
 		for i := range findings {
 			findings[i].File = "<stdin>"
-			_ = enc.Encode(findings[i])
+			emit(findings[i])
 		}
 		return len(findings), nil
 	}
@@ -156,7 +167,7 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 		}
 		for i := range findings {
 			findings[i].File = p
-			_ = enc.Encode(findings[i])
+			emit(findings[i])
 		}
 		total += len(findings)
 	}
