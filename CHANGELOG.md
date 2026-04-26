@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-04-25
+
+Quick wins from the failure-fixes plan: tighter example-marker scoping,
+soft prefilter for pure-prose PII lines, looser phone and credit-card
+shapes, full-block PEM capture, binary-file sniff in the walker,
+mask-output edge-byte safety, and JSON safety for library callers.
+
+### Fixed
+- **#2 Misleading example comment.** `looksLikeExample` now checks only
+  the candidate's own line plus a single immediately preceding
+  comment-only line (no assignment-looking content). A misleading
+  `// example key` comment far above a real-looking secret line no
+  longer suppresses the finding.
+- **#4 Phone area codes.** `phone_us` regex loosened from `[2-9]` to
+  `[0-9]` for both the area code and the exchange. Numbers like
+  `155-867-5309` and `055-123-4567` now match; the model decides
+  whether the match is real PII.
+- **#6 Multi-line PEM blocks.** `private_key_pem`, `x509_certificate`,
+  and `pgp_private_key` now match the full BEGIN..END span via the
+  RE2 `(?s)` flag instead of stopping at the BEGIN boundary. Verified
+  against an RSA-4096-style block. v2 fusion path no longer drops PEM
+  matches when the model labels the body as noise (high-trust rule
+  list).
+- **#16 Credit cards with separators.** Visa, Mastercard, Amex,
+  Discover, and JCB regexes accept `[ -]?` between every 4-digit
+  group. `4532 0151 1283 0366` now matches.
+- **#18 Mask-output edge bytes.** `MaskText` snaps every finding's
+  `[Start,End]` outward to the regex extractor's match at that
+  position before applying the placeholder. A model-narrow span no
+  longer leaves leading or trailing bytes of the underlying secret
+  visible in the masked output.
+
+### Added
+- **#3 Soft prefilter for pure-prose PII.** The detector prefilter
+  now synthesizes "soft" candidates for two-cap-word names
+  (`Vallabh Joshi`, `Linus Torvalds`) and US street suffixes near
+  numbers (`123 Main St`, `742 Evergreen Avenue`). Without these
+  the model never saw lines that carried only contextual PII.
+- **#11 Placeholder shapes.** `looksLikeExample` recognises
+  `<SET_ME>`, `<your-token>`, `__TOKEN__`, `${VAR}`, `xxxxx+`, and
+  `....+` placeholders on the candidate's line.
+- **#13 Binary file sniff.** `internal/walker.LooksBinary` reads the
+  first 512 bytes of each file: NUL byte, invalid UTF-8, or more
+  than 30 percent non-printable bytes classifies as binary and skips
+  the file instead of feeding garbage into the regex/tokenizer.
+- **#19 JSON safety on `Finding`.** `Finding.MarshalJSON` now omits
+  `Span` by default, so `json.Marshal(finding)` cannot accidentally
+  leak the raw secret value via library use. Callers that genuinely
+  need the raw value (key rotation, the CLI
+  `--output-reveal-secrets` flag) use the new `RevealedFinding`
+  wrapper. `SafeForOutput` is now belt-and-suspenders for non-JSON
+  sinks.
+
+### Quality
+Corpus thresholds (build gate) before / after on the labeled set
+(now 28 cases, up from 22):
+
+| Class   | v0.1.9 P/R    | v0.1.10 P/R   |
+| ------- | ------------- | ------------- |
+| secret  | 0.875 / 1.000 | 0.900 / 1.000 |
+| pii     | 0.900 / 0.750 | 0.944 / 1.000 |
+
+PII recall recovered to 1.0 thanks to the soft prefilter (#3),
+spaced credit cards (#16), and looser phone shapes (#4).
+
+### Notes
+The fix for #18 (mask snap) reads `extractor.ActiveRules()` per
+finding inside `MaskText`. This is fine for typical document sizes
+but can be a hot path if a caller masks many findings on a very
+large document. Future work: cache the per-document rule scan.
+
 ## [0.1.9] - 2026-04-26
 
 ### Security

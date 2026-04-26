@@ -132,10 +132,11 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 	total := 0
 
 	emit := func(f scanner.Finding) {
-		if !reveal {
-			f.Span = ""
+		if reveal {
+			_ = enc.Encode(scanner.RevealedFinding{F: f})
+		} else {
+			_ = enc.Encode(f)
 		}
-		_ = enc.Encode(f)
 	}
 
 	if len(paths) == 0 {

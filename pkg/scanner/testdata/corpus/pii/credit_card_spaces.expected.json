@@ -1,0 +1,5 @@
+{
+  "spans": [
+    {"start": 14, "end": 33, "type": "pii", "label": "Visa card with space separators (v0.1.10 #16)"}
+  ]
+}

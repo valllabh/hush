@@ -1,0 +1,5 @@
+{
+  "spans": [
+    {"start": 11, "end": 23, "type": "pii", "label": "non-NANP area-code phone (loosened in v0.1.10 #4)"}
+  ]
+}

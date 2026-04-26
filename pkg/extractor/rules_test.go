@@ -211,8 +211,8 @@ func TestSecretFamilies_Positive(t *testing.T) {
 		"azure_storage_connection_string": "DefaultEndpointsProtocol=https;AccountName=foo;AccountKey=" + strings.Repeat("A", 70) + "==",
 		"db_uri_creds":                    "mongodb://user:pass123@localhost:27017/db",
 		"http_basic_auth_url":             "https://admin:s3cret@example.com/path",
-		"x509_certificate":                "-----BEGIN CERTIFICATE-----",
-		"pgp_private_key":                 "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+		"x509_certificate":                "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkq\n-----END CERTIFICATE-----",
+		"pgp_private_key":                 "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----",
 		"putty_private_key":               "PuTTY-User-Key-File-2: ssh-rsa",
 		"jwt":                             "eyJhbGciOiJIUzI1NiIs.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
 	}
@@ -275,6 +275,67 @@ func TestPIIFamilies_Positive(t *testing.T) {
 		if !matchRule(t, name, input) {
 			t.Errorf("%s: expected match for %q", name, input)
 		}
+	}
+}
+
+// Regression tests for plan item #4: phone_us must match non-NANP area
+// codes (loosened from [2-9] to [0-9] for the area code). The model
+// remains responsible for deciding whether a given match is real PII.
+func TestPhoneUS_NonStandardAreaCodes(t *testing.T) {
+	cases := []string{
+		"155-867-5309",
+		"055-123-4567",
+		"055.123.4567",
+		"(055) 123-4567",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			if !matchRule(t, "phone_us", in) {
+				t.Errorf("phone_us: expected match for %q", in)
+			}
+		})
+	}
+}
+
+// Regression tests for plan item #16: credit card regexes must accept
+// space- and dash-separated 4-digit groups.
+func TestCreditCard_WithSeparators(t *testing.T) {
+	cases := map[string]string{
+		"credit_card_visa":       "4532 0151 1283 0366",
+		"credit_card_visa_dash":  "4532-0151-1283-0366",
+		"credit_card_mastercard": "5555 5555 5555 4444",
+		"credit_card_amex":       "3782 822463 10005",
+		"credit_card_discover":   "6011 1111 1111 1117",
+		"credit_card_jcb":        "3530 1113 3330 0000",
+	}
+	for name, in := range cases {
+		ruleName := name
+		if name == "credit_card_visa_dash" {
+			ruleName = "credit_card_visa"
+		}
+		t.Run(name, func(t *testing.T) {
+			if !matchRule(t, ruleName, in) {
+				t.Errorf("%s: expected match for %q", ruleName, in)
+			}
+		})
+	}
+}
+
+// Regression test for plan item #6: PEM private key block must match the
+// full BEGIN..END span, not just the BEGIN boundary. Verified with an
+// RSA-style multi-line block.
+func TestPrivateKeyPEM_FullBlock(t *testing.T) {
+	pem := `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM
+NOPQRSTUVWXYZ0123456789+/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN
+` + strings.Repeat("OPQRSTUVWXYZ0123456789+/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN\n", 60) + `-----END RSA PRIVATE KEY-----`
+	r := findRule(t, "private_key_pem")
+	loc := r.Regex.FindStringIndex(pem)
+	if loc == nil {
+		t.Fatal("private_key_pem: expected match on full RSA-4096-style PEM block")
+	}
+	if loc[0] != 0 || loc[1] != len(pem) {
+		t.Errorf("private_key_pem: match span = [%d,%d], want [0,%d] (full block)", loc[0], loc[1], len(pem))
 	}
 }
 

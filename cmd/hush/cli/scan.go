@@ -437,10 +437,11 @@ func runMulti(roots []string, opts walker.Options, workers int, asJSON bool,
 					reveal := viper.GetBool("output-reveal-secrets")
 					outMu.Lock()
 					for _, f := range findings {
-						if !reveal {
-							f.Span = ""
+						if reveal {
+							_ = enc.Encode(scanner.RevealedFinding{F: f})
+						} else {
+							_ = enc.Encode(f)
 						}
-						_ = enc.Encode(f)
 					}
 					outMu.Unlock()
 				}

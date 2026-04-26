@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -66,7 +67,7 @@ func Walk(roots []string, opts Options, out chan<- string, errs chan<- error) {
 			continue
 		}
 		if !info.IsDir() {
-			if shouldScan(root, info, opts) {
+			if shouldScan(root, info, opts) && !LooksBinary(root) {
 				out <- root
 			}
 			continue
@@ -110,6 +111,9 @@ func Walk(roots []string, opts Options, out chan<- string, errs chan<- error) {
 			if !shouldScan(path, info, opts) {
 				return nil
 			}
+			if LooksBinary(path) {
+				return nil
+			}
 			out <- path
 			return nil
 		})
@@ -131,6 +135,47 @@ func shouldScan(path string, info fs.FileInfo, opts Options) bool {
 		return false
 	}
 	return true
+}
+
+// LooksBinary returns true if the file at path appears to be binary based
+// on a 512-byte sniff: invalid UTF-8 or more than 30% non-printable bytes
+// classifies as binary. Used to skip files that would otherwise feed
+// garbage into the regex/tokenizer pipeline. Read errors are conservative:
+// treat as binary so we skip rather than crash on the next read.
+func LooksBinary(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+	var buf [512]byte
+	n, _ := f.Read(buf[:])
+	if n == 0 {
+		return false
+	}
+	b := buf[:n]
+	// NUL byte is the classic binary signal.
+	for _, c := range b {
+		if c == 0 {
+			return true
+		}
+	}
+	if !utf8.Valid(b) {
+		return true
+	}
+	nonPrintable := 0
+	for _, c := range b {
+		// allow tab, LF, CR, FF, and printable ASCII (0x20-0x7E); count
+		// other control bytes as non-printable. UTF-8 multi-byte (>= 0x80)
+		// is allowed since utf8.Valid passed.
+		if c == '\t' || c == '\n' || c == '\r' || c == '\f' {
+			continue
+		}
+		if c < 0x20 || c == 0x7F {
+			nonPrintable++
+		}
+	}
+	return float64(nonPrintable)/float64(n) > 0.30
 }
 
 // pathPrefixMatch returns true if any of the given absolute prefixes matches.

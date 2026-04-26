@@ -1,0 +1,4 @@
+{
+  "spans": [],
+  "notes": "v0.1.10 fix #11: placeholder shapes (<SET_ME>, __TOKEN__, ${VAR}) on the same line must suppress findings."
+}

@@ -185,3 +185,62 @@ func TestClassifyPattern_IncludeExtEnablesAllowlist(t *testing.T) {
 		t.Fatalf("include *.py didn't build OnlyExts: %+v", opts.OnlyExts)
 	}
 }
+
+// Regression test for plan item #13: a binary fixture (NUL bytes,
+// non-UTF-8 noise, PNG magic header) must be skipped by the walker so
+// the regex/tokenizer never sees garbage. Text files with the same
+// extension still flow through.
+func TestLooksBinary_SkipsNonText(t *testing.T) {
+	root := t.TempDir()
+	// 1. PNG magic header + random bytes
+	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	pngBody := make([]byte, 256)
+	for i := range pngBody {
+		pngBody[i] = byte(i)
+	}
+	pngPath := filepath.Join(root, "image.bin")
+	if err := os.WriteFile(pngPath, append(pngHeader, pngBody...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !LooksBinary(pngPath) {
+		t.Errorf("PNG-magic file should look binary")
+	}
+
+	// 2. NUL-rich blob
+	nul := make([]byte, 256)
+	nulPath := filepath.Join(root, "nul.bin")
+	if err := os.WriteFile(nulPath, nul, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !LooksBinary(nulPath) {
+		t.Errorf("NUL-only file should look binary")
+	}
+
+	// 3. Plain UTF-8 text file
+	txtPath := filepath.Join(root, "ok.txt")
+	if err := os.WriteFile(txtPath, []byte("api_key=AKIAIOSFODNN7EXAMPLE\nhello world\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if LooksBinary(txtPath) {
+		t.Errorf("plain text file should not look binary")
+	}
+
+	// 4. Walk picks up the text but skips the binaries.
+	opts := DefaultOptions()
+	opts.SkipExts = map[string]bool{} // clear so .bin isn't pre-filtered
+	got := collect(t, []string{root}, opts)
+	for _, p := range got {
+		if strings.HasSuffix(p, "image.bin") || strings.HasSuffix(p, "nul.bin") {
+			t.Errorf("walker emitted binary file: %s", p)
+		}
+	}
+	sawText := false
+	for _, p := range got {
+		if strings.HasSuffix(p, "ok.txt") {
+			sawText = true
+		}
+	}
+	if !sawText {
+		t.Errorf("walker dropped the text file")
+	}
+}

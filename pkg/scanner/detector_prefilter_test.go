@@ -3,6 +3,7 @@ package scanner
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/valllabh/hush/pkg/extractor"
@@ -226,6 +227,103 @@ func TestLooksLikeExample(t *testing.T) {
 			end := start + len("AKIAIOSFODNN7EXAMPLE")
 			if got := looksLikeExample(tc.text, start, end); got != tc.want {
 				t.Errorf("looksLikeExample(%q at %d) = %v, want %v", tc.text, start, got, tc.want)
+			}
+		})
+	}
+}
+
+// Regression test for plan item #2: a misleading example marker on a
+// far-above line (not the same line, not the immediately preceding
+// comment-only line) must NOT suppress a real-looking secret finding.
+func TestLooksLikeExample_MisleadingCommentAboveDoesNotSuppress(t *testing.T) {
+	text := `// example key in the docs below
+//
+// here are the production credentials we actually use:
+api_key = "AKIAIOSFODNN7EXAMPLE"`
+	start := strings.Index(text, "AKIA")
+	end := start + len("AKIAIOSFODNN7EXAMPLE")
+	if looksLikeExample(text, start, end) {
+		t.Errorf("misleading comment far above must not suppress; want false")
+	}
+}
+
+// Regression test for plan item #2: an example marker on the SAME line
+// as the candidate must still suppress.
+func TestLooksLikeExample_SameLineTriggers(t *testing.T) {
+	text := `api_key = "AKIAIOSFODNN7EXAMPLE" // example key, do not use`
+	start := strings.Index(text, "AKIA")
+	end := start + len("AKIAIOSFODNN7EXAMPLE")
+	if !looksLikeExample(text, start, end) {
+		t.Errorf("same-line marker must trigger; want true")
+	}
+}
+
+// Regression test for plan item #2: a comment-only line immediately
+// preceding the candidate carrying the marker must trigger.
+func TestLooksLikeExample_PrecedingCommentLineTriggers(t *testing.T) {
+	text := "// example key for the docs\napi_key = \"AKIAIOSFODNN7EXAMPLE\""
+	start := strings.Index(text, "AKIA")
+	end := start + len("AKIAIOSFODNN7EXAMPLE")
+	if !looksLikeExample(text, start, end) {
+		t.Errorf("preceding comment-only marker must trigger; want true")
+	}
+}
+
+// Regression test for plan item #2: a "comment" line that is actually a
+// commented-out assignment with a real-looking secret must NOT be treated
+// as a marker for the next line.
+func TestLooksLikeExample_PrecedingCommentedAssignmentDoesNotTrigger(t *testing.T) {
+	text := "# example_secret = \"oldvalue\"\napi_key = \"AKIAIOSFODNN7EXAMPLE\""
+	start := strings.Index(text, "AKIA")
+	end := start + len("AKIAIOSFODNN7EXAMPLE")
+	if looksLikeExample(text, start, end) {
+		t.Errorf("preceding commented-out assignment must not suppress; want false")
+	}
+}
+
+// Regression test for plan item #11: placeholder shapes on the same line
+// suppress. <SET_ME>, <your-token>, __TOKEN__, ${VAR}, xxxxx, ....
+func TestLooksLikeExample_PlaceholderShapes(t *testing.T) {
+	cases := []string{
+		`api_key = "AKIAIOSFODNN7EXAMPLE" # <SET_ME>`,
+		`api_key = "<your-token>" AKIAIOSFODNN7EXAMPLE`,
+		`api_key = "AKIAIOSFODNN7EXAMPLE" __TOKEN__`,
+		`api_key = "AKIAIOSFODNN7EXAMPLE" ${SOME_VAR}`,
+		`api_key = "AKIAIOSFODNN7EXAMPLE" xxxxxxxxxxx`,
+		`api_key = "AKIAIOSFODNN7EXAMPLE" .........`,
+	}
+	for _, text := range cases {
+		t.Run(text, func(t *testing.T) {
+			start := strings.Index(text, "AKIA")
+			end := start + len("AKIAIOSFODNN7EXAMPLE")
+			if !looksLikeExample(text, start, end) {
+				t.Errorf("placeholder shape must suppress; got false for %q", text)
+			}
+		})
+	}
+}
+
+// Regression test for plan item #3: soft prefilter synthesizes candidates
+// for two-cap-word names and US-street-suffix addresses so the model sees
+// pure-prose lines.
+func TestSoftPrefilterCandidates(t *testing.T) {
+	cases := []struct {
+		name    string
+		text    string
+		wantMin int
+	}{
+		{"name", "Hello, my name is Vallabh Joshi.", 1},
+		{"public_figure", "code by Linus Torvalds in 1991", 1},
+		{"address_st", "send to 123 Main St in Austin", 1},
+		{"address_avenue", "742 Evergreen Avenue, Springfield", 1},
+		{"address_blvd_no_match_without_number", "Sunset Blvd is famous", 0},
+		{"plain_prose", "the quick brown fox jumps over", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := softPrefilterCandidates(tc.text)
+			if len(got) < tc.wantMin {
+				t.Errorf("softPrefilterCandidates(%q) = %d cands, want >= %d", tc.text, len(got), tc.wantMin)
 			}
 		})
 	}

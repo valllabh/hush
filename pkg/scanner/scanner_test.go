@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -85,5 +86,61 @@ func TestMaskText_EmptyFindings(t *testing.T) {
 	text := "nothing to hide"
 	if got := MaskText(text, nil, ""); got != text {
 		t.Errorf("empty findings should pass through: %q", got)
+	}
+}
+
+// Regression test for plan item #18: when a finding's [Start,End] is
+// narrower than the underlying regex match, MaskText must snap outward
+// to the regex span so no edge bytes of the secret leak.
+func TestMaskText_SnapsToRegexMatch(t *testing.T) {
+	const aws = "AKIAIOSFODNN7EXAMPLE"
+	text := "api_key=" + aws + "\n"
+	awsStart := strings.Index(text, "AKIA")
+	// Simulate a model returning a narrower span (drops the first 3 and
+	// last 3 chars). Without snapping, those 6 bytes would leak.
+	narrow := []Finding{{Start: awsStart + 3, End: awsStart + len(aws) - 3, Rule: "secret"}}
+	masked := MaskText(text, narrow, "***")
+	if strings.Contains(masked, "AKI") || strings.Contains(masked, "PLE") {
+		t.Errorf("MaskText leaked edge bytes: %q", masked)
+	}
+	if strings.Contains(masked, aws) {
+		t.Errorf("full secret still visible: %q", masked)
+	}
+}
+
+// Regression test for plan item #19: Finding.MarshalJSON must omit Span
+// by default so library callers cannot accidentally leak the raw secret
+// via json.Marshal on a Finding.
+func TestFinding_MarshalJSON_OmitsSpanByDefault(t *testing.T) {
+	f := Finding{
+		Line: 1, Column: 1, Rule: "secret",
+		Span:     "AKIAIOSFODNN7EXAMPLE",
+		Redacted: "AKI***PLE",
+		Start:    0, End: 20,
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if strings.Contains(s, "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("default Finding JSON leaked Span: %s", s)
+	}
+	if !strings.Contains(s, `"redacted"`) {
+		t.Errorf("default Finding JSON missing redacted: %s", s)
+	}
+}
+
+// Regression test for plan item #19: RevealedFinding wrapper opts back
+// in to Span emission for callers that genuinely need it (CLI
+// --output-reveal-secrets, key rotation pipelines).
+func TestRevealedFinding_MarshalJSON_IncludesSpan(t *testing.T) {
+	f := Finding{Line: 1, Column: 1, Rule: "secret", Span: "AKIAIOSFODNN7EXAMPLE", Redacted: "AKI***PLE"}
+	b, err := json.Marshal(RevealedFinding{F: f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("RevealedFinding JSON should include Span: %s", string(b))
 	}
 }
