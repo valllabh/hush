@@ -125,7 +125,7 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 			return 0, err
 		}
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	enc := json.NewEncoder(os.Stdout)
 	reveal := viper.GetBool("output-reveal-secrets")

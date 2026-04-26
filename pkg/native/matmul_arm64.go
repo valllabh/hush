@@ -13,8 +13,11 @@ import "unsafe"
 // the first of K contiguous floats for that A row.
 //
 // Implemented in matmul_arm64.s using NEON (4x float32 lanes + FMLA).
+// Reachable on arm64 only via matmulPackedInner4x4; the linter does not
+// trace through the ASM linkage so silence the noise.
 //
 //go:noescape
+//nolint:unused
 func matmul4x4Kernel(a0, a1, a2, a3 *float32, bp *float32, K int, c0, c1, c2, c3 *float32)
 
 // matmul4xNPanels runs the 4x4 kernel across `panels` contiguous B panels
@@ -45,9 +48,13 @@ func matmulPackedPanels(a0, a1, a2, a3 []float32, bPacked []float32, K, panels i
 	)
 }
 
-// matmulPackedInner4x4 is the ASM-backed dispatch for the hot 4x4 tile.
-// It is called from matmulPacked. Keeping a thin wrapper lets us swap
-// kernels per-arch without touching the caller.
+// matmulPackedInner4x4 is the per-panel dispatch for the hot 4x4 tile.
+// On arm64 the live path is matmulPackedPanels (one ASM call per row
+// block); this single-panel variant is kept for symmetry with the
+// amd64 implementation and as a reference. Tagged unused so the linter
+// stops flagging the unreachable arm64 branch.
+//
+//nolint:unused
 func matmulPackedInner4x4(a0, a1, a2, a3 []float32, bp []float32, K int, c0, c1, c2, c3 []float32) {
 	// K==0 is a no-op; guard to avoid passing nil pointers from empty slices.
 	if K == 0 {

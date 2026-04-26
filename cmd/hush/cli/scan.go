@@ -218,7 +218,7 @@ func runScan(cmd *cobra.Command, paths []string) error {
 			return fmt.Errorf("loading model: %w (tip: try --model-off)", err)
 		}
 		if closer != nil {
-			defer closer()
+			defer func() { _ = closer() }()
 		}
 		sc = s
 	}
@@ -394,7 +394,7 @@ func scanFilePath(path string, threshold, entropy float64, ctx int, sc scanner.S
 	if err != nil {
 		return nil, err
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

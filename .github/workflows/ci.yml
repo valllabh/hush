@@ -91,6 +91,12 @@ jobs:
         run: |
           out=$(gofmt -s -l .)
           if [ -n "$out" ]; then echo "$out"; exit 1; fi
-      - uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
+      # The official golangci-lint-action ships a binary built with an
+      # older Go than our go.mod targets, causing
+      # "Go language version used to build golangci-lint is lower than the
+       # targeted Go version" errors. Build from source with the same
+      # Go we just set up so versions match.
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.0
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
