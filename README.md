@@ -51,24 +51,50 @@ sudo mv hush /usr/local/bin/
 go install github.com/valllabh/hush/cmd/hush@latest
 ```
 
-## Use it
+## Two modes
+
+Hush works two ways. Pick one:
+
+### Find mode
+
+Reports each secret or personal data item it sees. One JSON object per line. Drops into CI, scripts, dashboards.
 
 ```
-$ hush detect .
-config/prod.yaml:12:18  secret  AKIA****************            0.99
-.env:3:14               secret  ghp_***                         0.99
-docs/onboard.md:7:9     pii     val*****************com         0.99
-docs/onboard.md:9:14    pii     +1***********67                 0.97
-
-4 findings in 143 files (0.4s)
+$ hush detect path/to/file.txt
+{"file":"path/to/file.txt","line":2,"column":11,"rule":"secret","span":"AKIAIOSFODNN7EXAMPLE","redacted":"AKI**************PLE","start":29,"end":49,"confidence":1.00}
+{"file":"path/to/file.txt","line":3,"column":10,"rule":"pii","span":"vallabh.joshi@gmail.com","redacted":"val*****************com","start":59,"end":82,"confidence":1.00}
+{"file":"path/to/file.txt","line":4,"column":8,"rule":"pii","span":"415-555-2671","redacted":"415******671","start":90,"end":102,"confidence":1.00}
 ```
+
+Each line tells you:
+
+| field      | what it means                                       |
+| ---------- | --------------------------------------------------- |
+| file       | which file it came from                             |
+| line, column | where in the file                                 |
+| rule       | `secret` or `pii`                                   |
+| span       | the actual text that was found                      |
+| redacted   | a safe-to-log preview (first 3 + stars + last 3)    |
+| start, end | byte offsets into the file                          |
+| confidence | 0 to 1 (1 means the regex matched; lower means the AI is less sure) |
 
 Exit code is non zero when findings are reported, so it drops straight into CI.
+
+### Mask mode
+
+Reads text, writes the same text back with secrets replaced by placeholders. Useful for log redaction, cleaning up support tickets, masking before sending text to an LLM.
+
+```
+$ echo 'My key is AKIAIOSFODNN7EXAMPLE and email is vj@example.com' | hush --output-mask
+My key is [REDACTED_AWS_ACCESS_KEY_ID_1] and email is [REDACTED_EMAIL_ADDRESS_2]
+```
+
+Each placeholder is unique and labeled, so you can match the same secret across multiple appearances if you need to.
 
 ### Common patterns
 
 ```
-# Scan a directory
+# Scan a directory and get findings
 hush detect ./my-repo
 
 # Pipe text in
@@ -76,6 +102,9 @@ cat suspicious.log | hush detect
 
 # Save findings as JSON
 hush detect . > findings.jsonl
+
+# Mask a file
+hush --output-mask < raw.log > clean.log
 
 # Plug your own model in
 hush detect --model my-model.hbin --tokenizer my-tokenizer.json ./my-repo
@@ -95,7 +124,13 @@ s, _ := hush.New(hush.Options{
 })
 defer s.Close()
 
+// Find mode: list of findings
 findings, _ := s.ScanReader(reader)
+for _, f := range findings {
+    fmt.Println(f.Line, f.Column, f.Rule, f.Redacted, f.Confidence)
+}
+
+// Mask mode: text in, text out, secrets replaced
 masked, _, _ := s.Redact(text, "[REDACTED:%s]")
 ```
 
