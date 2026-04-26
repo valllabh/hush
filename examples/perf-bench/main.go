@@ -20,14 +20,14 @@ import (
 )
 
 type result struct {
-	Mode             string  `json:"mode"`
-	Repo             string  `json:"repo"`
-	FilesScanned     int     `json:"files_scanned"`
-	BytesScanned     int64   `json:"bytes_scanned"`
-	Findings         int     `json:"findings"`
-	WallSeconds      float64 `json:"wall_seconds"`
-	HeapAllocPeakMB  float64 `json:"heap_alloc_peak_mb"`
-	HeapInUsePeakMB  float64 `json:"heap_inuse_peak_mb"`
+	Mode            string  `json:"mode"`
+	Repo            string  `json:"repo"`
+	FilesScanned    int     `json:"files_scanned"`
+	BytesScanned    int64   `json:"bytes_scanned"`
+	Findings        int     `json:"findings"`
+	WallSeconds     float64 `json:"wall_seconds"`
+	HeapAllocPeakMB float64 `json:"heap_alloc_peak_mb"`
+	HeapInUsePeakMB float64 `json:"heap_inuse_peak_mb"`
 }
 
 func main() {
