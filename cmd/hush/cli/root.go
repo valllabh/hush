@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const Version = "0.1.10"
+const Version = "0.1.11"
 
 // configFile is set by --config / $HUSH_CONFIG; loaded lazily.
 var configFile string

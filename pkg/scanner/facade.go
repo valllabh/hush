@@ -1,8 +1,10 @@
 package scanner
 
 import (
+	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/valllabh/hush/pkg/extractor"
@@ -194,14 +196,87 @@ func lineColumn(text string, off int) (int, int) {
 }
 
 
-// ScanReader reads the whole stream then scans. Suitable for small-to-medium
-// inputs (typical files). For true streaming use ScanString in chunks.
+// streamChunkSize is the per-chunk read size for ScanReader and the
+// large-file path. 1 MB chosen to amortize tokenizer overhead while
+// keeping peak RSS bounded.
+const streamChunkSize = 1 << 20
+
+// streamChunkOverlap is the number of bytes carried between adjacent
+// chunks so a secret straddling a boundary still appears intact in one
+// chunk.
+const streamChunkOverlap = 4 << 10
+
+// streamMaxChunks caps total chunks scanned per ScanReader call. At
+// streamChunkSize=1 MB this is 200 MB of streaming work; beyond that
+// the worker bails with a stderr note rather than spending unbounded
+// time on a pathological input. Mirrors plan #12.
+const streamMaxChunks = 200
+
+// ScanReader scans an arbitrarily large reader without slurping the full
+// stream into memory. As of v0.1.11 it reads in 1 MB chunks with a 4 KB
+// trailing overlap and dedupes findings whose absolute offset matches
+// across chunks. Constant memory regardless of input size (#15).
 func (s *Scanner) ScanReader(r io.Reader) ([]Finding, error) {
-	var b strings.Builder
-	if _, err := io.Copy(&b, r); err != nil {
-		return nil, err
+	br := bufio.NewReaderSize(r, streamChunkSize+streamChunkOverlap)
+	var (
+		base       int
+		carry      []byte
+		out        []Finding
+		seen       = make(map[int64]struct{}, 256)
+		chunkN     int
+	)
+	for {
+		if chunkN >= streamMaxChunks {
+			fmt.Fprintf(os.Stderr, "hush: ScanReader: stopping after %d chunks (%.0f MB) on this stream\n", chunkN, float64(chunkN)*float64(streamChunkSize)/1024/1024)
+			break
+		}
+		chunkN++
+		buf := make([]byte, streamChunkSize)
+		n, err := io.ReadFull(br, buf)
+		if n == 0 && err == io.EOF {
+			break
+		}
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+		buf = buf[:n]
+		// Prepend carry from previous chunk.
+		chunkStart := base - len(carry)
+		var chunk []byte
+		if len(carry) == 0 {
+			chunk = buf
+		} else {
+			chunk = append(carry, buf...)
+		}
+		findings, scanErr := s.ScanString(string(chunk))
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		for _, f := range findings {
+			absStart := chunkStart + f.Start
+			absEnd := chunkStart + f.End
+			key := int64(absStart)<<32 | int64(absEnd)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			f.Start = absStart
+			f.End = absEnd
+			out = append(out, f)
+		}
+		// Advance base past the buf, save the trailing overlap as the
+		// next carry.
+		base += n
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			break
+		}
+		if len(buf) > streamChunkOverlap {
+			carry = append(carry[:0], buf[len(buf)-streamChunkOverlap:]...)
+		} else {
+			carry = append(carry[:0], buf...)
+		}
 	}
-	return s.ScanString(b.String())
+	return out, nil
 }
 
 // BatchScore scores many candidate spans in a single transformer forward

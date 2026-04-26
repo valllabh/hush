@@ -363,6 +363,52 @@ func runStdin(mask, asJSON bool, outPath string, threshold, entropy float64,
 // runMulti scans paths in parallel and streams NDJSON findings to stdout.
 // Mask output for multi-path input is no longer supported: mask is a
 // stream transformation, not a filesystem rewriter.
+// largeFileBytes is the size above which we switch from a slurping
+// os.ReadFile + Scan path to a chunked ScanReader. Mirrors plan #12.
+const largeFileBytes = 50 * 1024 * 1024
+
+// maxModelInvocationsPerFile caps detector calls per file in the chunked
+// path so a single 10 GB log cannot pin a worker indefinitely. Mirrors
+// plan #12 (200 windows ~= 200 forward passes ~= a few seconds).
+const maxModelInvocationsPerFile = 200
+
+// scanFilePath chooses the right scan strategy based on file size:
+// small files go through Scan (simple), large files stream via the
+// chunked ScanReader so peak RSS stays bounded.
+func scanFilePath(path string, threshold, entropy float64, ctx int, sc scanner.Scorer) ([]scanner.Finding, error) {
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		return nil, statErr
+	}
+	if info.Size() <= largeFileBytes {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return scanner.Scan(string(data), threshold, entropy, ctx, sc)
+	}
+	// Large file: stream via a Scanner facade so chunking + dedupe is
+	// handled centrally. We assemble a fresh Scanner here because the
+	// worker holds only the bare scorer.
+	s, err := scanner.New(scanner.Options{
+		MinConfidence:    threshold,
+		EntropyThreshold: entropy,
+		CtxChars:         ctx,
+		ModelOff:         sc == nil,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fmt.Fprintf(os.Stderr, "hush: scan %s: streaming chunked (%.1f MB)\n", path, float64(info.Size())/(1024*1024))
+	return s.ScanReader(f)
+}
+
 func runMulti(roots []string, opts walker.Options, workers int, asJSON bool,
 	threshold, entropy float64, ctx int, failFast bool,
 	sc scanner.Scorer) (int, bool) {
@@ -410,12 +456,7 @@ func runMulti(roots []string, opts walker.Options, workers int, asJSON bool,
 					continue
 				default:
 				}
-				data, err := os.ReadFile(path)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "hush: read %s: %v\n", path, err)
-					continue
-				}
-				findings, err := scanner.Scan(string(data), threshold, entropy, ctx, sc)
+				findings, err := scanFilePath(path, threshold, entropy, ctx, sc)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "hush: scan %s: %v\n", path, err)
 					continue

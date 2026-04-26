@@ -1,6 +1,7 @@
 package native
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -153,5 +154,51 @@ func TestDetectorEmptyText(t *testing.T) {
 	}
 	if len(spans) != 0 {
 		t.Fatalf("expected 0 spans, got %+v", spans)
+	}
+}
+
+// Regression test for plan item #14: as of v0.1.11, *Detector.Detect is
+// safe for concurrent use via an internal mutex. 10 goroutines hammering
+// one Detector must not panic, must each see at least one span, and the
+// span counts must be consistent across calls.
+func TestDetector_ConcurrentDetect(t *testing.T) {
+	if _, err := os.Stat(v2HBinPath); err != nil {
+		t.Skip("v2 model not available")
+	}
+	d := loadRealDetector(t)
+	defer d.Close()
+	const text = "ssh into prod with key AKIAIOSFODNN7EXAMPLE then call vallabh@example.com from 415-555-2671"
+	const N = 10
+
+	type result struct {
+		count int
+		err   error
+	}
+	results := make(chan result, N)
+	for i := 0; i < N; i++ {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					results <- result{0, fmt.Errorf("panic: %v", r)}
+				}
+			}()
+			sp, err := d.Detect(text)
+			results <- result{len(sp), err}
+		}()
+	}
+	var firstCount = -1
+	for i := 0; i < N; i++ {
+		r := <-results
+		if r.err != nil {
+			t.Errorf("goroutine %d: %v", i, r.err)
+			continue
+		}
+		if firstCount == -1 {
+			firstCount = r.count
+			continue
+		}
+		if r.count != firstCount {
+			t.Errorf("inconsistent span count under concurrency: got %d, first was %d", r.count, firstCount)
+		}
 	}
 }

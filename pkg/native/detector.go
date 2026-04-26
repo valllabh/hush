@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"sync"
 
 	"github.com/sugarme/tokenizer"
 	"github.com/sugarme/tokenizer/pretrained"
@@ -17,9 +18,11 @@ import (
 // the sliding-window strategy for inputs that exceed the model's
 // effective context.
 //
-// Like Scorer, Detector is not safe for concurrent use because the
-// underlying Model mutates tensor buffers during Forward. Guard with a
-// mutex or use one Detector per goroutine.
+// Concurrent use: as of v0.1.11, Detect serializes calls through an
+// internal mutex so library callers can wire one Detector into a worker
+// pool without crashing on tensor-buffer races. Throughput is therefore
+// bounded by one forward pass at a time; callers that need parallel
+// throughput should construct N Detectors and round-robin across them.
 type Detector struct {
 	model  *Model
 	tk     *tokenizer.Tokenizer
@@ -28,6 +31,10 @@ type Detector struct {
 	// cached so we don't rebuild per call
 	id2label map[int]string
 	numLabel int
+
+	// mu serializes Detect calls; the underlying Model mutates tensor
+	// buffers during Forward and is not goroutine-safe.
+	mu sync.Mutex
 }
 
 // Sliding-window character bounds. Tuned so a single window comfortably
@@ -130,6 +137,8 @@ func (d *Detector) Detect(text string) ([]Span, error) {
 	if text == "" {
 		return nil, nil
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	var all []Span
 

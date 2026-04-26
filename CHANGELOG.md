@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-04-25
+
+Robustness pass: hush now behaves well on real-world inputs (giant
+files, embedded blobs, concurrent goroutines, streams larger than RAM,
+encoded secret blobs).
+
+### Added
+- **#5 Encoded-secret pre-pass.** After the regex sweep, every
+  base64-shaped token (length divisible by 4, valid base64 alphabet)
+  is decoded once and re-checked against the rule set. When a known
+  rule matches the decoded form (e.g. an AWS key smuggled inside a
+  base64 string literal), the original encoded span is emitted with
+  a synthetic `encoded_<rule>` rule name. Total decode work is capped
+  at 10x the input length to avoid pathological all-base64 inputs.
+- **#12 Large-file streaming.** Files larger than 50 MB now flow
+  through `(*Scanner).ScanReader` instead of `os.ReadFile`. Per-file
+  model invocations are capped at 200 chunks (~200 MB of streaming
+  work) so a 10 GB log cannot pin a worker indefinitely.
+- **#15 Chunked `ScanReader`.** `(*Scanner).ScanReader` now reads in
+  1 MB chunks with a 4 KB carry-over so peak RSS stays bounded
+  regardless of input size. Findings whose absolute offset matches
+  across chunks are deduped. Verified with a 4 MB junk stream
+  carrying a real AWS key and with a key that straddles a 1 MB
+  chunk boundary.
+
+### Fixed
+- **#9 Long base64 chunks in source.** `FindHighEntropySpans` now
+  masks `data:image/...;base64,...` URIs and full
+  `-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----` blocks
+  before entropy scoring. Inline images and embedded certs no
+  longer flood the report with high-entropy false positives.
+- **#14 Detector concurrency.** `*native.Detector.Detect` now
+  serialises calls through an internal `sync.Mutex`. Library users
+  wiring one Detector into a worker pool no longer race on the
+  shared tensor buffers. Documented throughput tradeoff: callers
+  needing parallel forward passes should construct N Detectors and
+  round-robin across them. Regression test hammers a single
+  Detector from 10 goroutines and asserts no panics + consistent
+  span counts.
+
+### Notes
+The chunked path is bytes-aware, not token-aware. A multi-line PEM
+that spans more than the 4 KB overlap will still be missed by the
+regex extractor because the BEGIN/END boundary cannot fit in one
+chunk. For now keep large PEM-bearing files under the 50 MB
+threshold; future work: bump overlap dynamically when an unmatched
+BEGIN block is seen.
+
 ## [0.1.10] - 2026-04-25
 
 Quick wins from the failure-fixes plan: tighter example-marker scoping,

@@ -143,3 +143,62 @@ func TestNilScannerClose(t *testing.T) {
 		t.Errorf("nil Close should be no op, got %v", err)
 	}
 }
+
+// Regression test for plan item #15: ScanReader processes streams larger
+// than RAM in chunks rather than slurping. This test wires a 16 MB
+// reader (16x our 1 MB chunk size) of mostly junk with a real AWS key
+// embedded near the end and verifies the finding is reported with an
+// absolute offset that matches the original byte position.
+func TestScanReader_ChunkedStream_FindsLateSecret(t *testing.T) {
+	s := newOff(t)
+	defer s.Close()
+	const aws = "AKIAIOSFODNN7EXAMPLE"
+	junk := strings.Repeat("the quick brown fox jumps over the lazy dog\n", 1024) // ~44 KB
+	// Build ~4 MB of junk then place the secret near the end. Big enough
+	// to span multiple 1 MB chunks; small enough to keep the test fast.
+	body := strings.Repeat(junk, 90)
+	full := body + "secret_token=" + aws + "\n" + body[:1024]
+	r := strings.NewReader(full)
+	findings, err := s.ScanReader(r)
+	if err != nil {
+		t.Fatalf("ScanReader: %v", err)
+	}
+	wantStart := strings.Index(full, aws)
+	hit := false
+	for _, f := range findings {
+		if f.Start == wantStart && f.End == wantStart+len(aws) {
+			hit = true
+			break
+		}
+	}
+	if !hit {
+		t.Errorf("expected AKIA finding at offset %d in chunked stream; got %+v", wantStart, findings)
+	}
+}
+
+// Regression test for plan item #15: a secret that straddles a chunk
+// boundary must still be detected via the 4 KB carry-over.
+func TestScanReader_StraddleBoundary(t *testing.T) {
+	s := newOff(t)
+	defer s.Close()
+	const aws = "AKIAIOSFODNN7EXAMPLE"
+	// streamChunkSize is 1 MB; place the secret straddling exactly that
+	// boundary. The prefix ends with a non-word byte so the regex's \b
+	// anchor fires at the start of "AKIA".
+	pre := strings.Repeat("a", streamChunkSize-11) + " "
+	full := pre + aws + " " + strings.Repeat("b", 1024)
+	findings, err := s.ScanReader(strings.NewReader(full))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hit := false
+	wantStart := len(pre)
+	for _, f := range findings {
+		if f.Start == wantStart && f.End == wantStart+len(aws) {
+			hit = true
+		}
+	}
+	if !hit {
+		t.Errorf("straddling secret missed; findings=%+v", findings)
+	}
+}

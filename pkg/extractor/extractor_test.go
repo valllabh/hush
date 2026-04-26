@@ -125,3 +125,52 @@ func assertClose(t *testing.T, got, want, tol float64) {
 		t.Errorf("got %v, want %v (±%v)", got, want, tol)
 	}
 }
+
+// Regression test for plan item #5: a base64-encoded AWS access key
+// hidden inside a string literal must be discovered by the encoded-pass
+// even when the raw regex misses it.
+func TestExtract_EncodedSecret_AWSBase64(t *testing.T) {
+	// "AKIAIOSFODNN7EXAMPLE" -> base64
+	const enc = "QUtJQUlPU0ZPRE5ON0VYQU1QTEU="
+	text := "config_blob = \"" + enc + "\""
+	cands := Extract(text, 64, 4.0)
+	found := false
+	for _, c := range cands {
+		if strings.HasPrefix(c.SourceRule, "encoded_aws_access_key_id") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("encoded AWS key missed; cands=%+v", cands)
+	}
+}
+
+// Regression test for plan item #9: an inline base64 data URI for an
+// image must NOT trigger entropy false positives (its body is masked
+// before entropy scoring).
+func TestExtract_EmbeddedDataURI_NoEntropyFalseAlarms(t *testing.T) {
+	// Construct a long alphanumeric pseudo-image body well above the
+	// entropy threshold.
+	body := strings.Repeat("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", 12)
+	text := "<img src=\"data:image/png;base64," + body + "\">"
+	cands := Extract(text, 64, 4.0)
+	for _, c := range cands {
+		if c.SourceRule == "high_entropy" {
+			t.Errorf("data: URI body emitted entropy hit (#9 regression): %q", c.Span)
+		}
+	}
+}
+
+// Regression test for plan item #9: a CERTIFICATE PEM block's body must
+// not appear as a high-entropy candidate. The x509_certificate rule may
+// still match the boundary (intentional).
+func TestExtract_CertificateBody_NoEntropyFalseAlarms(t *testing.T) {
+	body := strings.Repeat("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\n", 8)
+	text := "-----BEGIN CERTIFICATE-----\n" + body + "-----END CERTIFICATE-----"
+	cands := Extract(text, 64, 4.0)
+	for _, c := range cands {
+		if c.SourceRule == "high_entropy" {
+			t.Errorf("CERTIFICATE body emitted entropy hit (#9 regression): %q", c.Span)
+		}
+	}
+}

@@ -1,6 +1,8 @@
 package extractor
 
 import (
+	"encoding/base64"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -83,14 +85,65 @@ func lineCol(text string, pos int) (int, int) {
 	return line, pos - lastNL
 }
 
+// reBase64Token matches a chunk of base64 alphabet (A-Z a-z 0-9 + /)
+// with optional trailing padding, length divisible by 4, at least 24
+// chars long. Used by the encoded-secret pre-pass (#5).
+var reBase64Token = regexp.MustCompile(`[A-Za-z0-9+/]{24,}={0,2}`)
+
+// findEncodedSecrets decodes base64 candidates and re-runs ruleSpans on
+// the decoded bytes. When a known rule matches the decoded form, the
+// ORIGINAL encoded span is emitted as a candidate carrying that rule's
+// metadata. Caps total decode work at 10x the input length so a
+// pathological "all-base64" input cannot blow up. Plan item #5.
+func findEncodedSecrets(text string) []rawSpan {
+	limit := 10 * len(text)
+	work := 0
+	var out []rawSpan
+	for _, m := range reBase64Token.FindAllStringIndex(text, -1) {
+		s, e := m[0], m[1]
+		token := text[s:e]
+		// Length must be divisible by 4 to be valid base64.
+		if len(token)%4 != 0 {
+			continue
+		}
+		work += len(token)
+		if work > limit {
+			break
+		}
+		// StdEncoding handles `+/` alphabet. Skip on decode error.
+		decoded, err := base64.StdEncoding.DecodeString(token)
+		if err != nil {
+			continue
+		}
+		// Re-run rules on the decoded text. Skip recursion: only check
+		// raw regex rules, not entropy or another base64 pass.
+		inner := ruleSpans(string(decoded))
+		if len(inner) == 0 {
+			continue
+		}
+		for _, hit := range inner {
+			out = append(out, rawSpan{
+				start:    s,
+				end:      e,
+				value:    token,
+				rule:     "encoded_" + hit.rule,
+				ruleType: hit.ruleType,
+			})
+		}
+	}
+	return out
+}
+
 // Extract runs the pipeline: regex rules first (they win on overlap), then
-// high-entropy fallback, then dedupe + build Candidate records.
+// base64-encoded-secret pre-pass, then high-entropy fallback, then dedupe
+// + build Candidate records.
 func Extract(text string, ctxChars int, entropyThreshold float64) []Candidate {
 	if ctxChars <= 0 {
 		ctxChars = DefaultCtxChars
 	}
 
 	rawRules := ruleSpans(text)
+	rawEncoded := findEncodedSecrets(text)
 	rawEntropy := FindHighEntropySpans(text, entropyThreshold)
 	entropySpans := make([]rawSpan, 0, len(rawEntropy))
 	for _, h := range rawEntropy {
@@ -98,7 +151,7 @@ func Extract(text string, ctxChars int, entropyThreshold float64) []Candidate {
 		// random-looking strings are usually credentials, not PII.
 		entropySpans = append(entropySpans, rawSpan{h.Start, h.End, h.Span, "high_entropy", RuleTypeSecret})
 	}
-	combined := dedupe(append(rawRules, entropySpans...))
+	combined := dedupe(append(append(rawRules, rawEncoded...), entropySpans...))
 
 	out := make([]Candidate, 0, len(combined))
 	for _, s := range combined {
