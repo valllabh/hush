@@ -17,8 +17,8 @@ import (
 // the full pipeline including ONNX classifier scoring per candidate.
 
 var (
-	cleanSmall  = "the quick brown fox jumps over the lazy dog\n" + strings.Repeat("normal code here\n", 20)
-	dirtySmall  = `api_key="ghp_abcdefghijklmnopqrstuvwxyz0123456789"` + "\n" +
+	cleanSmall = "the quick brown fox jumps over the lazy dog\n" + strings.Repeat("normal code here\n", 20)
+	dirtySmall = `api_key="ghp_abcdefghijklmnopqrstuvwxyz0123456789"` + "\n" +
 		`AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE` + "\n" +
 		// split literal so github push protection does not flag the test fixture
 		`SLACK_TOKEN=` + "xoxb" + `-1234567890-abcdefghijklmnopqr` + "\n"

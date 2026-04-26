@@ -195,7 +195,6 @@ func lineColumn(text string, off int) (int, int) {
 	return line, col
 }
 
-
 // streamChunkSize is the per-chunk read size for ScanReader and the
 // large-file path. 1 MB chosen to amortize tokenizer overhead while
 // keeping peak RSS bounded.
@@ -219,11 +218,11 @@ const streamMaxChunks = 200
 func (s *Scanner) ScanReader(r io.Reader) ([]Finding, error) {
 	br := bufio.NewReaderSize(r, streamChunkSize+streamChunkOverlap)
 	var (
-		base       int
-		carry      []byte
-		out        []Finding
-		seen       = make(map[int64]struct{}, 256)
-		chunkN     int
+		base   int
+		carry  []byte
+		out    []Finding
+		seen   = make(map[int64]struct{}, 256)
+		chunkN int
 	)
 	for {
 		if chunkN >= streamMaxChunks {

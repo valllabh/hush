@@ -76,7 +76,9 @@ jobs:
           tmp=$(mktemp -d)
           echo "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE" > "$tmp/app.env"
           docker run --rm -v "$tmp:/src:ro" hush:ci scan /src --model-off --output-json | tee out.json
-          grep -q AKIA out.json
+          # As of v0.1.9 the raw value is stripped from output by default;
+          # the rule name remains and is the durable signal of detection.
+          grep -q aws_access_key_id out.json
 
   lint:
     runs-on: ubuntu-latest

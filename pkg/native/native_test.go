@@ -184,4 +184,3 @@ func TestForwardMatchesORT(t *testing.T) {
 	}
 	t.Logf("Go matches ORT: got %v, want %v", got, want)
 }
-

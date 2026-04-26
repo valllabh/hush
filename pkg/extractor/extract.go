@@ -11,10 +11,10 @@ const DefaultCtxChars = 256
 
 // Candidate is a span found in the text with context for downstream scoring.
 type Candidate struct {
-	Span       string  `json:"span"`
-	LeftCtx    string  `json:"left_ctx"`
-	RightCtx   string  `json:"right_ctx"`
-	SourceRule string  `json:"rule"`
+	Span       string `json:"span"`
+	LeftCtx    string `json:"left_ctx"`
+	RightCtx   string `json:"right_ctx"`
+	SourceRule string `json:"rule"`
 	// RuleType is "secret" or "pii"; downstream uses it to decide whether
 	// to apply the model. PII rules are precise enough that the secret
 	// classifier (trained on credentials, not PII) would over-suppress them.

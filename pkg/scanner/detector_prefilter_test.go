@@ -11,11 +11,11 @@ import (
 
 func TestBuildWindows(t *testing.T) {
 	cases := []struct {
-		name      string
-		cands     []extractor.Candidate
-		textLen   int
-		windowSz  int
-		want      [][2]int
+		name     string
+		cands    []extractor.Candidate
+		textLen  int
+		windowSz int
+		want     [][2]int
 	}{
 		{
 			name:     "empty input",
@@ -165,7 +165,7 @@ func TestLooksLikeNonPII(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"550e8400-e29b-41d4-a716-446655440000", true}, // UUID
+		{"550e8400-e29b-41d4-a716-446655440000", true},                             // UUID
 		{"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", true}, // sha256
 		{"2026-04-25", true},
 		{"2026-04-25T13:45:00Z", true},

@@ -23,18 +23,18 @@ const (
 // Meta captures the topology of the embedded model. The hbin exporter
 // infers these from the ONNX graph and writes them as JSON in the header.
 type Meta struct {
-	Model          string `json:"model"`
-	Hidden         int    `json:"hidden"`
-	Layers         int    `json:"layers"`
-	Heads          int    `json:"heads"`
-	FFN            int    `json:"ffn"`
-	Vocab          int    `json:"vocab"`
-	MaxPosition    int    `json:"max_position"`
-	TokenTypeCount int    `json:"token_type_count"`
-	PaddingIdx     int    `json:"padding_idx"`
-	SeqLen         int    `json:"seq_len"`
-	OutputClasses  int    `json:"output_classes"`
-	Task           string `json:"task,omitempty"`
+	Model          string  `json:"model"`
+	Hidden         int     `json:"hidden"`
+	Layers         int     `json:"layers"`
+	Heads          int     `json:"heads"`
+	FFN            int     `json:"ffn"`
+	Vocab          int     `json:"vocab"`
+	MaxPosition    int     `json:"max_position"`
+	TokenTypeCount int     `json:"token_type_count"`
+	PaddingIdx     int     `json:"padding_idx"`
+	SeqLen         int     `json:"seq_len"`
+	OutputClasses  int     `json:"output_classes"`
+	Task           string  `json:"task,omitempty"`
 	Labels         *Labels `json:"labels,omitempty"`
 }
 

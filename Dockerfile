@@ -1,36 +1,27 @@
-# Self contained hush image. Build from the hush repo root:
+# Self contained hush image. Pure Go, no CGO, no ONNX Runtime needed.
 #
-#   make vendor   (once, to populate vendor/)
 #   docker build -t hush:latest .
-#   docker run --rm -v "$PWD:/src:ro" hush:latest scan /src
-
-ARG ORT_VERSION=1.20.0
-ARG ORT_ARCH=x64
+#   docker run --rm -v "$PWD:/src:ro" hush:latest detect /src
+#
+# Vendored deps optional (CI runs `go mod vendor` first); if vendor/
+# is absent, the build pulls modules from the network.
 
 FROM golang:1.26-bookworm AS build
-ARG ORT_VERSION
-ARG ORT_ARCH
-ENV CGO_ENABLED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl && rm -rf /var/lib/apt/lists/*
-
-RUN curl -sSL -o /tmp/ort.tgz \
-      https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-${ORT_ARCH}-${ORT_VERSION}.tgz && \
-    tar -xzf /tmp/ort.tgz -C /opt && \
-    cp /opt/onnxruntime-linux-${ORT_ARCH}-${ORT_VERSION}/lib/* /usr/local/lib/ && \
-    ldconfig && rm /tmp/ort.tgz
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 
 WORKDIR /src
 COPY . .
-RUN go build -mod=vendor -trimpath -ldflags="-s -w" -o /out/hush ./cmd/hush
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=build /usr/local/lib/libonnxruntime.so* /usr/local/lib/
+RUN if [ -d vendor ]; then \
+      go build -mod=vendor -ldflags="-s -w" -o /out/hush ./cmd/hush; \
+    else \
+      go build -ldflags="-s -w" -o /out/hush ./cmd/hush; \
+    fi
+
+# Distroless static is the smallest base that still ships ca-certificates
+# and tzdata. The hush binary is statically linked so this is enough.
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/hush /usr/local/bin/hush
-RUN ldconfig
-USER nobody
+USER nonroot
 ENTRYPOINT ["/usr/local/bin/hush"]
 CMD ["--help"]

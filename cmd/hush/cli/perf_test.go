@@ -51,7 +51,7 @@ func generateTree(t *testing.T, n int) string {
 // available.
 type runStats struct {
 	Wall      time.Duration
-	MaxRSSkib int64  // peak resident memory in KiB
+	MaxRSSkib int64 // peak resident memory in KiB
 	Stdout    string
 	ExitCode  int
 	Err       error

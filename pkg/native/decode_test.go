@@ -6,11 +6,12 @@ import (
 )
 
 // Shared label inventory for tests.
-//   0 -> O
-//   1 -> B-secret
-//   2 -> I-secret
-//   3 -> B-pii
-//   4 -> I-pii
+//
+//	0 -> O
+//	1 -> B-secret
+//	2 -> I-secret
+//	3 -> B-pii
+//	4 -> I-pii
 var testID2Label = map[int]string{
 	0: "O",
 	1: "B-secret",

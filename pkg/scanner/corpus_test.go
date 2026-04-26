@@ -19,7 +19,7 @@ import (
 type expectedSpan struct {
 	Start int    `json:"start"`
 	End   int    `json:"end"`
-	Type  string `json:"type"`  // "secret" or "pii"
+	Type  string `json:"type"` // "secret" or "pii"
 	Label string `json:"label"`
 }
 
@@ -224,12 +224,12 @@ func TestCorpus_V1_vs_V2(t *testing.T) {
 	ruleTypes := buildRuleTypeMap()
 
 	type rowResult struct {
-		name      string
-		group     string
+		name         string
+		group        string
 		v1Sec, v1Pii counts
 		v2Sec, v2Pii counts
-		v1Findings []scanner.Finding
-		v2Findings []scanner.Finding
+		v1Findings   []scanner.Finding
+		v2Findings   []scanner.Finding
 	}
 	var rows []rowResult
 	var v1SecAgg, v1PiiAgg, v2SecAgg, v2PiiAgg counts
@@ -248,10 +248,18 @@ func TestCorpus_V1_vs_V2(t *testing.T) {
 		v1S, v1P, _ := scoreFile(f1, c.expected.Spans, ruleTypes)
 		v2S, v2P, _ := scoreFile(f2, c.expected.Spans, ruleTypes)
 
-		v1SecAgg.tp += v1S.tp; v1SecAgg.fp += v1S.fp; v1SecAgg.fn += v1S.fn
-		v1PiiAgg.tp += v1P.tp; v1PiiAgg.fp += v1P.fp; v1PiiAgg.fn += v1P.fn
-		v2SecAgg.tp += v2S.tp; v2SecAgg.fp += v2S.fp; v2SecAgg.fn += v2S.fn
-		v2PiiAgg.tp += v2P.tp; v2PiiAgg.fp += v2P.fp; v2PiiAgg.fn += v2P.fn
+		v1SecAgg.tp += v1S.tp
+		v1SecAgg.fp += v1S.fp
+		v1SecAgg.fn += v1S.fn
+		v1PiiAgg.tp += v1P.tp
+		v1PiiAgg.fp += v1P.fp
+		v1PiiAgg.fn += v1P.fn
+		v2SecAgg.tp += v2S.tp
+		v2SecAgg.fp += v2S.fp
+		v2SecAgg.fn += v2S.fn
+		v2PiiAgg.tp += v2P.tp
+		v2PiiAgg.fp += v2P.fp
+		v2PiiAgg.fn += v2P.fn
 
 		rel, _ := filepath.Rel(corpusRoot, c.path)
 		rows = append(rows, rowResult{

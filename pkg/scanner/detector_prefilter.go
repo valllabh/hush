@@ -200,13 +200,13 @@ func softPrefilterCandidates(text string) []extractor.Candidate {
 //  2. Run the detector on windows around each candidate.
 //  3. Fuse model spans with regex candidates:
 //     - For each regex candidate that the model OVERLAPS and labels as
-//       "noise", DROP the candidate (model says it's a fake/example).
+//     "noise", DROP the candidate (model says it's a fake/example).
 //     - For each remaining regex candidate, EMIT it with the regex's class
-//       (secret/pii) — the regex knows the class deterministically. This
-//       guarantees v2 catches everything v1's regex catches.
+//     (secret/pii) — the regex knows the class deterministically. This
+//     guarantees v2 catches everything v1's regex catches.
 //     - For each model span that does NOT overlap any regex candidate,
-//       EMIT it (these are the v2 wins: names, custom tokens, contextual
-//       PII v1's regex couldn't see).
+//     EMIT it (these are the v2 wins: names, custom tokens, contextual
+//     PII v1's regex couldn't see).
 //  4. Drop model-only spans whose text is obviously not PII (UUIDs,
 //     hex hashes, ISO dates) — model precision backstop.
 //
