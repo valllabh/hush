@@ -20,8 +20,10 @@ RUN if [ -d vendor ]; then \
 
 # Distroless static is the smallest base that still ships ca-certificates
 # and tzdata. The hush binary is statically linked so this is enough.
-FROM gcr.io/distroless/static-debian12:nonroot
+# Stay on root (uid 0) so the default image can read arbitrary host bind
+# mounts (`docker run -v $repo:/src:ro hush detect /src`). Callers who
+# care about least-privilege can pass --user themselves.
+FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/hush /usr/local/bin/hush
-USER nonroot
 ENTRYPOINT ["/usr/local/bin/hush"]
 CMD ["--help"]
