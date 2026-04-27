@@ -16,11 +16,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-latest = linux/amd64
+        # ubuntu-latest    = linux/amd64
         # ubuntu-24.04-arm = linux/arm64
-        # macos-latest = darwin/arm64 (Apple Silicon)
-        # macos-13 = darwin/amd64 (Intel)
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+        # macos-latest     = darwin/arm64 (Apple Silicon)
+        #
+        # macos-13 (darwin/amd64 Intel) is intentionally NOT in the
+        # matrix: GitHub-hosted Intel Mac runners are heavily backlogged
+        # since Apple Silicon became the default, with multi-hour
+        # queues that block a green CI long after every other matrix
+        # entry has finished. The pure-Go runtime is arch-agnostic and
+        # the linux/amd64 + darwin/arm64 jobs cover the same code path.
+        # Re-add macos-13 if Intel-specific bugs surface.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
         go: ["1.26"]
     steps:
       - uses: actions/checkout@v4
