@@ -192,3 +192,63 @@ func TestIntegration_FailEndCleanExit0(t *testing.T) {
 		t.Errorf("--fail-end on clean: expected exit 0, got %d", code)
 	}
 }
+
+// ---------- C7: hush detect on a directory walks files ----------
+//
+// Regression for the "hush detect on a directory printed
+// 'is a directory'" bug: the subcommand must walk the path and scan
+// every file under it, like `hush scan` does. The Fargate perf-bench
+// run on 2026-04-27 caught this in the wild because the corpus was
+// passed as a directory, not a single file.
+
+func TestIntegration_DetectWalksDirectory(t *testing.T) {
+	root := t.TempDir()
+	// One dirty file at the top, one in a subdir, plus a clean file
+	// and a node_modules directory we expect to be skipped.
+	if err := os.WriteFile(filepath.Join(root, "app.env"),
+		[]byte(`AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "internal")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "config.yaml"),
+		[]byte(`github_token: ghp_TESTONLYTESTONLYTESTONLYTESTONLYTEST6`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "readme.md"),
+		[]byte("plain prose, nothing to see here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	junk := filepath.Join(root, "node_modules", "junk")
+	if err := os.MkdirAll(junk, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(junk, "leaks.env"),
+		[]byte(`SECRET=AKIAIOSFODNN7EXAMPLE`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runHush(t, "", "detect", root)
+	// detect exits 1 when findings are reported; that is by design and
+	// the lack of it would be its own bug.
+	if code != 1 {
+		t.Errorf("detect on dirty dir: expected exit 1, got %d; stderr=%s", code, stderr)
+	}
+	if strings.Contains(stderr, "is a directory") {
+		t.Errorf("detect must not error on directory args; stderr=%s", stderr)
+	}
+	if !strings.Contains(stdout, "AKI") {
+		t.Errorf("detect should have found the AWS key (redacted) under the dir; stdout=%s", stdout)
+	}
+	// The github token in the subdir must also surface — proves walk
+	// recurses, not just scans top-level files.
+	if !strings.Contains(stdout, "config.yaml") {
+		t.Errorf("detect should have walked into subdirectories; stdout=%s", stdout)
+	}
+	// And node_modules must be skipped — proves the prune list works.
+	if strings.Contains(stdout, "node_modules") {
+		t.Errorf("detect should skip node_modules; stdout=%s", stdout)
+	}
+}

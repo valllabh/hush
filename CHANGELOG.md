@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-04-27
+
+### Fixed
+- **`hush detect <dir>` now walks the directory.** Previous releases
+  treated every positional arg as a file and called `os.ReadFile`,
+  failing with `is a directory` on the most natural CLI invocation
+  (`hush detect ./my-repo`). Caught by an EC2/Fargate perf-bench run
+  on 2026-04-27 against `/sample/logrus`.
+  - Reuses `internal/walker.Walk` so `hush detect` and `hush scan`
+    share one central skip list (`internal/walker.DefaultSkipDirs`,
+    28 entries: `.git`, `node_modules`, `vendor`, `dist`, `build`,
+    `.venv`, `__pycache__`, etc.), the binary-file sniff, and the
+    10 MB per-file size cap.
+  - Stops hardcoding skip rules per subcommand.
+
+### Added
+- `TestIntegration_DetectWalksDirectory` regression test asserting
+  detect on a directory exits 1, finds the dirty file in a subdir,
+  and skips `node_modules`. The test now blocks any future regression.
+
 ## [0.1.11] - 2026-04-25
 
 Robustness pass: hush now behaves well on real-world inputs (giant

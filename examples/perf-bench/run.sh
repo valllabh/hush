@@ -1,47 +1,51 @@
 #!/bin/sh
-# Bench entrypoint. Clones a small set of public repos, then runs both
-# the hush CLI and the in-process Go library against each. Prints one
-# JSON line per (repo, mode) so an outer driver can ingest the numbers.
-#
-# Override the repo list via the REPOS env var (space-separated).
+# Download the released hush CLI for the current arch, time one
+# `hush detect` over the bundled sample codebase, print results.
 set -eu
 
-REPOS="${REPOS:-https://github.com/sirupsen/logrus.git https://github.com/spf13/cobra.git https://github.com/Plazmaz/leaky-repo.git}"
-WORK="${WORK:-/work}"
-OUT="${OUT:-/tmp/bench.jsonl}"
+ARCH=$(uname -m)
+case "$ARCH" in
+  aarch64|arm64) GOARCH=arm64 ;;
+  x86_64|amd64)  GOARCH=amd64 ;;
+  *) echo "unsupported arch $ARCH" >&2; exit 1 ;;
+esac
 
-mkdir -p "$WORK"
-: > "$OUT"
+VERSION="${HUSH_VERSION:-0.1.11}"
+URL="https://github.com/valllabh/hush/releases/download/v${VERSION}/hush_${VERSION}_linux_${GOARCH}.tar.gz"
 
-run_one() {
-  url="$1"
-  name=$(basename "$url" .git)
-  dir="$WORK/$name"
+echo "===== hush perf-bench ====="
+echo "arch=${GOARCH}  hush=${VERSION}  url=${URL}"
+echo
 
-  if [ ! -d "$dir" ]; then
-    echo "clone: $url" >&2
-    git clone --depth=1 --quiet "$url" "$dir"
-  fi
-  size=$(du -sk "$dir" | cut -f1)
-  echo "scan: $name (${size}K)" >&2
+echo "----- download hush -----"
+curl -fsSL "$URL" -o /tmp/hush.tgz
+tar -xzf /tmp/hush.tgz -C /tmp
+# Release tarball has a versioned top-level dir, e.g.
+#   hush_0.1.11_linux_arm64/hush
+HUSH_BIN=$(find /tmp -maxdepth 3 -type f -name hush -perm -u+x | head -1)
+install -m 0755 "$HUSH_BIN" /usr/local/bin/hush
+hush version
+echo
 
-  # CLI mode: download-then-run release binary. Captures wallclock via
-  # /usr/bin/time -f. Findings count = number of NDJSON lines.
-  start=$(date +%s.%N)
-  findings=$(/usr/local/bin/hush detect "$dir" 2>/dev/null | wc -l | tr -d ' ' || true)
-  end=$(date +%s.%N)
-  wall=$(awk -v s="$start" -v e="$end" 'BEGIN{printf "%.2f", e-s}')
-  printf '{"mode":"cli","repo":"%s","findings":%s,"wall_seconds":%s,"size_kb":%s}\n' \
-    "$name" "$findings" "$wall" "$size" >> "$OUT"
+SAMPLE="${SAMPLE:-/sample/logrus}"
+echo "----- sample codebase -----"
+files=$(find "$SAMPLE" -type f 2>/dev/null | wc -l | tr -d ' ')
+bytes=$(du -sk "$SAMPLE" 2>/dev/null | cut -f1)
+echo "path=${SAMPLE}  files=${files}  size=${bytes}K"
+echo
 
-  # Library mode: in-process bench harness emits its own JSON.
-  /usr/local/bin/perf-bench --repo "$dir" --json >> "$OUT" 2>/dev/null || true
-}
-
-for url in $REPOS; do
-  run_one "$url"
-done
-
-echo >&2
-echo "=== results ($OUT) ===" >&2
-cat "$OUT"
+echo "----- bench: hush detect -----"
+# /usr/bin/time -v gives wall, user, sys, peak RSS. Capture findings
+# to a side file so the line count doesn't pollute the timing block.
+set +e
+/usr/bin/time -v hush detect "$SAMPLE" > /tmp/findings.jsonl 2> /tmp/time.txt
+exitcode=$?
+set -e
+findings=$(wc -l < /tmp/findings.jsonl | tr -d ' ')
+echo "exit=${exitcode}  findings=${findings}"
+echo
+echo "----- /usr/bin/time output -----"
+cat /tmp/time.txt
+echo
+echo "----- first 3 findings -----"
+head -3 /tmp/findings.jsonl || true

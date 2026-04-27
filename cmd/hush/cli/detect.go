@@ -12,6 +12,7 @@ import (
 	// Blank import wires scanner.DefaultScorerFactory to the embedded
 	// classifier so the v1 fallback path can score candidates.
 	_ "github.com/valllabh/hush/pkg/bundled"
+	"github.com/valllabh/hush/internal/walker"
 	"github.com/valllabh/hush/pkg/native"
 	"github.com/valllabh/hush/pkg/scanner"
 )
@@ -155,22 +156,42 @@ func runDetect(paths []string, modelPath, tokPath string, prefilter bool) (int, 
 		return len(findings), nil
 	}
 
-	for _, p := range paths {
-		data, rerr := os.ReadFile(p)
+	scanFile := func(path string) {
+		data, rerr := os.ReadFile(path)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "hush detect: read %s: %v\n", p, rerr)
-			continue
+			fmt.Fprintf(os.Stderr, "hush detect: read %s: %v\n", path, rerr)
+			return
 		}
 		findings, scanErr := s.ScanString(string(data))
 		if scanErr != nil {
-			fmt.Fprintf(os.Stderr, "hush detect: scan %s: %v\n", p, scanErr)
-			continue
+			fmt.Fprintf(os.Stderr, "hush detect: scan %s: %v\n", path, scanErr)
+			return
 		}
 		for i := range findings {
-			findings[i].File = p
+			findings[i].File = path
 			emit(findings[i])
 		}
 		total += len(findings)
+	}
+
+	// Reuse internal/walker so `hush detect` and `hush scan` share one
+	// central skip list (DefaultSkipDirs in internal/walker/walker.go),
+	// the binary-file sniff, and the 10 MB per-file size cap. Channel
+	// receive overlaps with file scanning.
+	roots := paths
+	out := make(chan string, 64)
+	errs := make(chan error, 64)
+	go func() {
+		for e := range errs {
+			fmt.Fprintf(os.Stderr, "hush detect: walk: %v\n", e)
+		}
+	}()
+	go func() {
+		walker.Walk(roots, walker.DefaultOptions(), out, errs)
+		close(errs)
+	}()
+	for path := range out {
+		scanFile(path)
 	}
 	return total, nil
 }
