@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel older runs of the same branch when a new push lands. Without
+# this, every push queues an additional run and stale ones tie up
+# scarce runners (especially macos), creating multi-hour backlogs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -36,28 +43,12 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
 
-      - name: Install ONNX Runtime (linux amd64)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          curl -sSL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-linux-x64-1.20.0.tgz
-          tar -xzf ort.tgz
-          sudo cp -r onnxruntime-linux-x64-1.20.0/lib/* /usr/local/lib/
-          sudo ldconfig
+      # Hush has been pure Go (no CGO, no ONNX Runtime) since v0.1.2.
+      # The legacy ORT path is still available behind `-tags=ort` for
+      # numerical equivalence testing, but the default test build does
+      # not need it. Saves ~30 s per linux job and removes a network
+      # download as a CI failure mode.
 
-      - name: Install ONNX Runtime (linux arm64)
-        if: matrix.os == 'ubuntu-24.04-arm'
-        run: |
-          curl -sSL -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.20.0/onnxruntime-linux-aarch64-1.20.0.tgz
-          tar -xzf ort.tgz
-          sudo cp -r onnxruntime-linux-aarch64-1.20.0/lib/* /usr/local/lib/
-          sudo ldconfig
-
-      - name: Install ONNX Runtime (macos)
-        if: runner.os == 'macOS'
-        run: brew install onnxruntime
-
-      - run: go vet ./...
-        working-directory: .
       - run: go test -race -count=1 ./...
 
   docker:
@@ -100,9 +91,9 @@ jobs:
           if [ -n "$out" ]; then echo "$out"; exit 1; fi
       # The official golangci-lint-action ships a binary built with an
       # older Go than our go.mod targets, causing
-      # "Go language version used to build golangci-lint is lower than the
-       # targeted Go version" errors. Build from source with the same
-      # Go we just set up so versions match.
+      # "Go language version used to build golangci-lint is lower than
+      # the targeted Go version" errors. Build from source with the
+      # same Go we just set up so versions match.
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.0
       - name: Run golangci-lint
