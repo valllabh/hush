@@ -1,0 +1,11 @@
+# Changelog
+
+## 1.7.0
+
+  * add `ForceQuote` and `PadLevelText` options in the `TextFormatter`
+  * fix `WithTimeFormat` rendering when nested inside `WithFields`
+  * deprecate `Hooks.GetCallerStack` in favor of `Hooks.CallStack`
+
+## 1.6.0
+
+  * add `Logger.GetLevel()` accessor

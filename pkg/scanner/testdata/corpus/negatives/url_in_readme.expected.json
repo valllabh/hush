@@ -1,0 +1,4 @@
+{
+  "spans": [],
+  "notes": "GitHub badge URLs and pkg.go.dev links inside markdown should not be flagged. Regression for the v0.1.12 perf-bench run on logrus where 65 false positives appeared, mostly URL fragments hit by the high-entropy fallback."
+}

@@ -27,6 +27,6 @@ COPY --from=sample /sample /sample
 COPY examples/perf-bench/run.sh /usr/local/bin/run.sh
 RUN chmod +x /usr/local/bin/run.sh
 
-ENV HUSH_VERSION=0.1.11
+ENV HUSH_VERSION=0.1.12
 WORKDIR /sample
 ENTRYPOINT ["/usr/local/bin/run.sh"]

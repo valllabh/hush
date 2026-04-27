@@ -1,0 +1,4 @@
+{
+  "spans": [],
+  "notes": "CamelCase code identifiers in CHANGELOG/markdown prose (PadLevelText, ForceQuote, WithTimeFormat) must not be flagged as PII. Regression for the model FP on PadLevelText caught by the v0.1.12 perf-bench."
+}

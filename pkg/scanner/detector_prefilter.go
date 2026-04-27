@@ -19,6 +19,21 @@ var (
 	reLikelyHash = regexp.MustCompile(`^[0-9a-fA-F]{32,128}$`) // md5/sha1/sha256/sha512 hex
 	reLikelyDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}.*)?$`)
 
+	// URL-shaped: the high-entropy fallback in pkg/extractor flags long
+	// alphanumeric runs inside URLs (e.g. badge / docs links in
+	// README.md and CI yaml) as `secret`. Real secrets in URLs are rare
+	// and live in known patterns (slack webhook, etc.) which already
+	// have dedicated rules. So drop spans that are URLs or sit inside
+	// the URL portion of the line.
+	reLikelyURL = regexp.MustCompile(`^https?://`)
+	reURLOnLine = regexp.MustCompile(`https?://\S+`)
+
+	// "Looks like a code identifier in prose": short, all-letters, no
+	// digits, no @, no separator. The v2 NER head sometimes labels a
+	// camelCase fragment like `evelText` (sliced out of `PadLevelText`)
+	// as PII. Real PII tokens have an @, a digit, or a separator.
+	reCodeIdentifier = regexp.MustCompile(`^[A-Za-z]{3,16}$`)
+
 	// Words that indicate a regex hit is illustrative, not real. Matched
 	// case-insensitively against the SAME LINE as the candidate, or on an
 	// isolated comment line immediately preceding it (see looksLikeExample).
@@ -52,6 +67,33 @@ var (
 func looksLikeNonPII(s string) bool {
 	if reLikelyUUID.MatchString(s) || reLikelyHash.MatchString(s) || reLikelyDate.MatchString(s) {
 		return true
+	}
+	if reLikelyURL.MatchString(s) {
+		return true
+	}
+	if reCodeIdentifier.MatchString(s) {
+		return true
+	}
+	return false
+}
+
+// inURLContext returns true if a candidate at [start, end) sits inside
+// the URL portion of its line. Used to suppress high-entropy hits on
+// URL fragments (badge links, docs links, GitHub Actions refs).
+func inURLContext(text string, start, end int) bool {
+	ls, le := lineBoundsAt(text, start)
+	line := text[ls:le]
+	matches := reURLOnLine.FindAllStringIndex(line, -1)
+	if len(matches) == 0 {
+		return false
+	}
+	relStart := start - ls
+	relEnd := end - ls
+	for _, m := range matches {
+		// Span fully inside this URL?
+		if relStart >= m[0] && relEnd <= m[1] {
+			return true
+		}
 	}
 	return false
 }
@@ -264,11 +306,25 @@ func scanWithDetectorPrefilter(text string, d Detector, minConfidence, entropyTh
 		if looksLikeExample(text, c.Start, c.End) {
 			continue
 		}
+		// Drop high-entropy hits that fall inside a URL (badge URLs in
+		// READMEs, docs URLs in CI yaml, etc.) — those are not secrets,
+		// they just happen to contain random-looking alphanumeric runs.
+		// Strong-signal rules (PEM blocks, AWS prefixes, etc.) bypass
+		// this check via isHighTrustRule.
+		if c.SourceRule == "high_entropy" && !isHighTrustRule(c.SourceRule) &&
+			inURLContext(text, c.Start, c.End) {
+			continue
+		}
+		// Drop spans that look like a non-secret/non-PII string outright
+		// (URL, UUID, hash, ISO date, plain code identifier in prose).
+		raw := text[c.Start:c.End]
+		if c.SourceRule == "high_entropy" && looksLikeNonPII(raw) {
+			continue
+		}
 		ruleClass := c.RuleType // "secret" or "pii"
 		if ruleClass == "" {
 			ruleClass = "secret"
 		}
-		raw := text[c.Start:c.End]
 		line, col := lineColumn(text, c.Start)
 		out = append(out, Finding{
 			Line:       line,
@@ -297,6 +353,9 @@ func scanWithDetectorPrefilter(text string, d Detector, minConfidence, entropyTh
 		start, end := clampSpan(sp.Start, sp.End, len(text))
 		raw := text[start:end]
 		if looksLikeNonPII(raw) {
+			continue
+		}
+		if inURLContext(text, start, end) {
 			continue
 		}
 		line, col := lineColumn(text, start)

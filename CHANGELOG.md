@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-04-27
+
+### Fixed
+- **URL fragments no longer flagged as secrets.** The high-entropy
+  fallback in `pkg/extractor` was matching long alphanumeric runs
+  inside URLs (badge URLs in README.md, docs links in CI yaml,
+  pkg.go.dev references). Caught by today's perf-bench run on
+  `sirupsen/logrus`: 65 false positives, the majority of them URL
+  fragments. The hybrid pipeline now drops high-entropy hits whose
+  span starts with `http://`/`https://` or sits fully inside a URL on
+  the same line. Strong-signal rules (PEM blocks, AWS prefixes, etc.)
+  bypass this via `isHighTrustRule`.
+- **Plain code identifiers no longer flagged as PII.** The v2 head
+  occasionally tagged a CamelCase fragment sliced out of a longer
+  identifier (`evelText` from `PadLevelText` in a CHANGELOG bullet)
+  as PII. Real PII spans contain an `@`, a digit, or a separator.
+  Spans that are 3-16 letters with no other character class are now
+  dropped from both regex-emit and model-only-emit paths.
+
+### Added
+- Three new corpus fixtures under
+  `pkg/scanner/testdata/corpus/negatives/`:
+  - `url_in_readme.txt` — markdown badge URLs
+  - `url_in_ci_yaml.txt` — GitHub Actions docs links and `uses:` refs
+  - `code_identifiers.txt` — CHANGELOG with `PadLevelText`-style names
+  All paired with `<name>.expected.json` declaring zero spans, so the
+  build gate fails any future regression in these classes.
+
 ## [0.1.12] - 2026-04-27
 
 ### Fixed
